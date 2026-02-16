@@ -1,0 +1,25 @@
+services:
+  backend:
+    build: ./backend
+    container_name: materialhub-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - materialhub_data:/app/data
+    environment:
+      - DB_PATH=data/materials.db
+      - DATA_DIR=data
+      - PORT=8000
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: materialhub-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  materialhub_data:

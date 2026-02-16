@@ -1,0 +1,13 @@
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Database
+sqlalchemy>=2.0.0
+
+# Word document parsing
+python-docx>=1.0.0
+
+# Config
+python-dotenv>=1.0.0
