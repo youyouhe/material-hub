@@ -18,7 +18,14 @@ export function useMaterials() {
   }, []);
 
   const search = useCallback(
-    async (params: { q?: string; document_id?: number; status?: ExpiryStatus }) => {
+    async (params: {
+      q?: string;
+      document_id?: number;
+      status?: ExpiryStatus;
+      linked_status?: 'all' | 'company' | 'person' | 'unlinked';
+      source_type?: 'all' | 'docx' | 'manual';
+      company_id?: number;
+    }) => {
       setLoading(true);
       setError(null);
       try {

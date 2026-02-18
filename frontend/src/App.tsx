@@ -1,19 +1,31 @@
 import { useState, useCallback } from 'react';
 import { Toaster } from 'react-hot-toast';
-import { Upload, Search } from 'lucide-react';
+import { Upload, Search, Building2, Users, Home } from 'lucide-react';
 import clsx from 'clsx';
+import HomePage from './pages/HomePage';
 import UploadPage from './pages/UploadPage';
 import BrowsePage from './pages/BrowsePage';
+import CompaniesPage from './pages/CompaniesPage';
+import PersonsPage from './pages/PersonsPage';
 
-type Tab = 'upload' | 'browse';
+type Tab = 'home' | 'upload' | 'browse' | 'companies' | 'persons';
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('browse');
+  const [tab, setTab] = useState<Tab>('home');
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleTabChange = useCallback((newTab: Tab) => {
+    setTab(newTab);
+    // 切换到这些页面时刷新数据
+    if (newTab === 'home' || newTab === 'browse') {
+      setRefreshKey((k) => k + 1);
+    }
+  }, []);
 
   const handleExtracted = useCallback(() => {
     setRefreshKey((k) => k + 1);
-  }, []);
+    handleTabChange('home'); // 上传完成后跳转到首页查看结构化信息
+  }, [handleTabChange]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -27,28 +39,64 @@ export default function App() {
 
             <nav className="flex gap-1">
               <button
-                onClick={() => setTab('browse')}
+                onClick={() => handleTabChange('home')}
                 className={clsx(
-                  'flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg transition-colors',
+                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
+                  tab === 'home'
+                    ? 'bg-blue-50 text-blue-700 font-medium'
+                    : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                <Home className="w-4 h-4" />
+                首页
+              </button>
+              <button
+                onClick={() => handleTabChange('browse')}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
                   tab === 'browse'
                     ? 'bg-blue-50 text-blue-700 font-medium'
                     : 'text-gray-600 hover:bg-gray-100'
                 )}
               >
                 <Search className="w-4 h-4" />
-                Browse
+                素材
               </button>
               <button
-                onClick={() => setTab('upload')}
+                onClick={() => handleTabChange('companies')}
                 className={clsx(
-                  'flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg transition-colors',
+                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
+                  tab === 'companies'
+                    ? 'bg-blue-50 text-blue-700 font-medium'
+                    : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                <Building2 className="w-4 h-4" />
+                公司
+              </button>
+              <button
+                onClick={() => handleTabChange('persons')}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
+                  tab === 'persons'
+                    ? 'bg-blue-50 text-blue-700 font-medium'
+                    : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                <Users className="w-4 h-4" />
+                人员
+              </button>
+              <button
+                onClick={() => handleTabChange('upload')}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
                   tab === 'upload'
                     ? 'bg-blue-50 text-blue-700 font-medium'
                     : 'text-gray-600 hover:bg-gray-100'
                 )}
               >
                 <Upload className="w-4 h-4" />
-                Upload
+                上传
               </button>
             </nav>
           </div>
@@ -57,11 +105,11 @@ export default function App() {
 
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {tab === 'upload' ? (
-          <UploadPage onExtracted={handleExtracted} />
-        ) : (
-          <BrowsePage key={refreshKey} />
-        )}
+        {tab === 'home' && <HomePage key={refreshKey} />}
+        {tab === 'upload' && <UploadPage onExtracted={handleExtracted} />}
+        {tab === 'browse' && <BrowsePage key={refreshKey} />}
+        {tab === 'companies' && <CompaniesPage />}
+        {tab === 'persons' && <PersonsPage />}
       </main>
     </div>
   );

@@ -10,6 +10,7 @@ Single-pass scan through .docx body elements:
 import os
 import re
 import logging
+from typing import Optional, List, Tuple
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -47,7 +48,8 @@ class ExtractedMaterial:
     heading_level: int
     image_data: bytes
     image_ext: str
-    expiry_date: str | None = None  # ISO format YYYY-MM-DD
+    image_filename: str  # Actual filename saved to disk
+    expiry_date: Optional[str] = None  # ISO format YYYY-MM-DD
 
 
 @dataclass
@@ -55,7 +57,7 @@ class SectionInfo:
     section: str
     title: str
     level: int
-    text_buffer: list[str] = field(default_factory=list)
+    text_buffer: List[str] = field(default_factory=list)
 
 
 def _get_para_text(elem) -> str:
@@ -67,7 +69,7 @@ def _get_para_text(elem) -> str:
     return "".join(texts)
 
 
-def _detect_heading(elem) -> SectionInfo | None:
+def _detect_heading(elem) -> Optional[SectionInfo]:
     """Check if element is a heading (by style or numbered pattern)."""
     if elem.tag != qn("w:p"):
         return None
@@ -76,21 +78,8 @@ def _detect_heading(elem) -> SectionInfo | None:
     if not text:
         return None
 
-    # Strategy 1: Heading style
-    style_elem = elem.find(qn("w:pPr"))
-    if style_elem is not None:
-        style_ref = style_elem.find(qn("w:pStyle"))
-        if style_ref is not None:
-            style_val = style_ref.get(qn("w:val"), "")
-            if style_val.startswith("Heading") or style_val.startswith("heading"):
-                try:
-                    level = int(style_val.replace("Heading", "").replace("heading", "").strip())
-                    if 1 <= level <= 6:
-                        return SectionInfo(section="", title=text, level=level)
-                except ValueError:
-                    pass
-
-    # Strategy 2: Chinese major numbering (一、报价部分)
+    # Strategy 1: Chinese major numbering (一、报价部分)
+    # Check first because it's most specific
     if len(text) <= 100:
         m = CHINESE_MAJOR_RE.match(text)
         if m:
@@ -100,23 +89,64 @@ def _detect_heading(elem) -> SectionInfo | None:
                 level=1,
             )
 
-        # Strategy 3: Arabic numbered (10.1 营业执照)
+    # Strategy 2: Arabic numbered (10.1 营业执照)
+    # Check before style because text numbering is more explicit
+    if len(text) <= 200:
         m = ARABIC_SECTION_RE.match(text)
         if m:
             num = m.group(1)
             title = m.group(2).strip()
             top = int(num.split(".")[0])
-            if top < 100 and len(title) < 80:
+            if top < 100 and len(title) < 150:
                 return SectionInfo(
                     section=num,
                     title=title,
                     level=len(num.split(".")) + 1,
                 )
 
+    # Strategy 3: Heading style (including numeric styles)
+    style_elem = elem.find(qn("w:pPr"))
+    if style_elem is not None:
+        style_ref = style_elem.find(qn("w:pStyle"))
+        if style_ref is not None:
+            style_val = style_ref.get(qn("w:val"), "")
+
+            # Check for standard Heading styles
+            if style_val.startswith("Heading") or style_val.startswith("heading"):
+                try:
+                    level = int(style_val.replace("Heading", "").replace("heading", "").strip())
+                    if 1 <= level <= 9:
+                        return SectionInfo(section="", title=text, level=level)
+                except ValueError:
+                    pass
+
+            # Check for numeric styles (1, 2, 3, 4, etc.) used as heading levels
+            # Common in Chinese documents
+            if style_val.isdigit():
+                try:
+                    level = int(style_val)
+                    if 1 <= level <= 9 and len(text) < 200:
+                        return SectionInfo(section="", title=text, level=level)
+                except ValueError:
+                    pass
+
+            # Check for custom heading styles like "a1", "af0", "af1" etc.
+            # These might indicate headings in some templates
+            if len(style_val) <= 10 and len(text) < 100 and text and not text.startswith("供应商") and not text.startswith("日期"):
+                # Common heading patterns in Chinese documents
+                common_headings = [
+                    "承诺书", "证明", "授权", "说明", "声明", "情况表",
+                    "基本情况", "管理体系", "资质", "证书", "执照"
+                ]
+                if any(keyword in text for keyword in common_headings):
+                    # Estimate level based on context
+                    if style_val in ["a1", "af1", "af0"]:
+                        return SectionInfo(section="", title=text, level=3)
+
     return None
 
 
-def _extract_images_from_elem(elem, doc_part) -> list[tuple[bytes, str]]:
+def _extract_images_from_elem(elem, doc_part) -> List[Tuple[bytes, str]]:
     """Extract embedded images from a single XML element."""
     images = []
     seen = set()
@@ -146,7 +176,7 @@ def _extract_images_from_elem(elem, doc_part) -> list[tuple[bytes, str]]:
     return images
 
 
-def _detect_expiry_date(text: str) -> str | None:
+def _detect_expiry_date(text: str) -> Optional[str]:
     """Try to extract an expiry date from text."""
     for pattern in EXPIRY_PATTERNS:
         m = pattern.search(text)
@@ -169,7 +199,7 @@ def _safe_filename(s: str) -> str:
     return s[:80]
 
 
-def extract_materials(docx_path: str, output_dir: str) -> list[ExtractedMaterial]:
+def extract_materials(docx_path: str, output_dir: str) -> List[ExtractedMaterial]:
     """
     Linear scan through a .docx file.
     Returns list of extracted materials (section + image pairs).
@@ -179,9 +209,9 @@ def extract_materials(docx_path: str, output_dir: str) -> list[ExtractedMaterial
     body = doc.element.body
     elements = list(body)
 
-    current_section: SectionInfo | None = None
-    results: list[ExtractedMaterial] = []
-    image_counter: dict[str, int] = {}  # track per-section image count
+    current_section: Optional[SectionInfo] = None
+    results: List[ExtractedMaterial] = []
+    image_counter: dict = {}  # track per-section image count
 
     for elem in elements:
         # Check if this element is a heading
@@ -244,6 +274,7 @@ def extract_materials(docx_path: str, output_dir: str) -> list[ExtractedMaterial
                     heading_level=current_section.level,
                     image_data=img_data,
                     image_ext=img_ext,
+                    image_filename=fname,
                     expiry_date=expiry,
                 )
             )

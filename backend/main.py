@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
-from routers import documents, materials
+from routers import documents, materials, companies, persons
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,6 +32,8 @@ app.add_middleware(
 
 app.include_router(documents.router)
 app.include_router(materials.router)
+app.include_router(companies.router)
+app.include_router(persons.router)
 
 
 @app.on_event("startup")
@@ -48,5 +50,5 @@ if __name__ == "__main__":
     import uvicorn
     import os
 
-    port = int(os.getenv("PORT", "8000"))
+    port = int(os.getenv("PORT", "8101"))
     uvicorn.run(app, host="0.0.0.0", port=port)

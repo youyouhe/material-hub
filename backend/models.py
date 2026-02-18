@@ -1,7 +1,7 @@
 """Pydantic request/response schemas for MaterialHub API."""
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 
 
@@ -32,6 +32,8 @@ class MaterialUpdate(BaseModel):
     title: Optional[str] = None
     section: Optional[str] = None
     expiry_date: Optional[date] = None
+    company_id: Optional[int] = None
+    person_id: Optional[int] = None
 
 
 class ExtractionResult(BaseModel):
@@ -39,7 +41,7 @@ class ExtractionResult(BaseModel):
     filename: str
     section_count: int
     image_count: int
-    materials: list[MaterialResponse]
+    materials: List[MaterialResponse]
 
 
 class SearchParams(BaseModel):
