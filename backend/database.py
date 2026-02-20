@@ -5,20 +5,58 @@ SQLite + SQLAlchemy for metadata; images stored on filesystem.
 
 import os
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 from contextlib import contextmanager
+import uuid
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime, Date, ForeignKey, event,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
+import bcrypt
 
 logger = logging.getLogger("materialhub.database")
 
 DEFAULT_DB_PATH = "data/materials.db"
 
 Base = declarative_base()
+
+
+class User(Base):
+    """用户账号"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, nullable=False, unique=True)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+
+    # 关联
+    sessions = relationship("SessionToken", back_populates="user", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "username": self.username,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_login": self.last_login.isoformat() if self.last_login else None,
+        }
+
+
+class SessionToken(Base):
+    """会话令牌"""
+    __tablename__ = "sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+
+    # 关联
+    user = relationship("User", back_populates="sessions")
 
 
 class Company(Base):
@@ -202,6 +240,9 @@ def init_db():
     _SessionLocal = sessionmaker(bind=_engine)
     logger.info("Database initialized at %s", db_path)
 
+    # Create default admin user if users table is empty
+    _create_default_admin()
+
 
 def _run_migrations(engine):
     """Run database migrations."""
@@ -299,3 +340,25 @@ def get_session():
         raise
     finally:
         session.close()
+
+
+def _create_default_admin():
+    """Create default admin user if users table is empty."""
+    with get_session() as session:
+        user_count = session.query(User).count()
+        if user_count == 0:
+            default_username = os.getenv("AUTH_DEFAULT_USERNAME", "admin")
+            default_password = os.getenv("AUTH_DEFAULT_PASSWORD", "admin123")
+
+            password_hash = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            admin_user = User(
+                username=default_username,
+                password_hash=password_hash,
+                created_at=datetime.utcnow()
+            )
+            session.add(admin_user)
+            session.commit()
+            logger.info(f"Created default admin user: {default_username}")
+        else:
+            logger.info(f"Users table already has {user_count} user(s), skipping default admin creation")

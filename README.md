@@ -147,7 +147,7 @@ docker-compose logs -f
 
 # 访问应用
 # 前端: http://localhost:5173
-# 后端: http://localhost:8101
+# 后端: http://localhost:8201
 ```
 
 ### 2. 本地开发部署
@@ -170,7 +170,7 @@ cp ../.env.example ../.env
 
 # 运行后端
 python main.py
-# 后端运行在 http://localhost:8101
+# 后端运行在 http://localhost:8201
 ```
 
 #### 前端
@@ -214,7 +214,7 @@ DB_PATH=data/materials.db
 
 # 服务器配置
 HOST=0.0.0.0
-PORT=8101
+PORT=8201
 
 # OCR服务配置（需要外部OCR服务）
 OCR_SERVICE_URL=http://host.docker.internal:8010
@@ -293,7 +293,7 @@ OCR服务接口规范：
 
 后端API文档（Swagger UI）：
 ```
-http://localhost:8101/docs
+http://localhost:8201/docs
 ```
 
 主要API端点：

@@ -12,6 +12,7 @@ import {
 } from '../services/api';
 import MaterialCard from './MaterialCard';
 import MaterialPicker from './MaterialPicker';
+import OCRResultViewer from './OCRResultViewer';
 
 interface PersonDetailModalProps {
   person: PersonInfo | null;
@@ -69,6 +70,7 @@ export default function PersonDetailModal({
   const [imageViewerUrl, setImageViewerUrl] = useState<string | null>(null);
   const [imageViewerTitle, setImageViewerTitle] = useState<string>('');
   const [showPicker, setShowPicker] = useState(false);
+  const [ocrViewerMaterial, setOcrViewerMaterial] = useState<MaterialInfo | null>(null);
 
   useEffect(() => {
     if (person) {
@@ -165,8 +167,8 @@ export default function PersonDetailModal({
     }
   };
 
-  const handleViewOCR = () => {
-    toast('OCR结果查看功能待实现');
+  const handleViewOCR = (material: MaterialInfo) => {
+    setOcrViewerMaterial(material);
   };
 
   const handleLinkMaterials = async (materialIds: number[], section?: string) => {
@@ -391,6 +393,14 @@ export default function PersonDetailModal({
             <p className="text-white text-center mt-4">{imageViewerTitle}</p>
           </div>
         </div>
+      )}
+
+      {/* OCR Result Viewer */}
+      {ocrViewerMaterial && (
+        <OCRResultViewer
+          material={ocrViewerMaterial}
+          onClose={() => setOcrViewerMaterial(null)}
+        />
       )}
     </>
   );

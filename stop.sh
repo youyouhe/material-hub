@@ -1,0 +1,106 @@
+#!/bin/bash
+# MaterialHub 宿主机停止脚本
+
+set -e
+
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 项目根目录
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# PID文件
+BACKEND_PID_FILE="$PROJECT_ROOT/.backend.pid"
+FRONTEND_PID_FILE="$PROJECT_ROOT/.frontend.pid"
+
+echo -e "${BLUE}🛑 MaterialHub 停止服务${NC}"
+echo "========================================"
+
+# 停止Backend
+if [ -f "$BACKEND_PID_FILE" ]; then
+    BACKEND_PID=$(cat "$BACKEND_PID_FILE")
+    if ps -p $BACKEND_PID > /dev/null 2>&1; then
+        echo -e "${YELLOW}→${NC} 停止Backend (PID: $BACKEND_PID)..."
+        kill $BACKEND_PID 2>/dev/null || true
+        # 等待进程结束
+        for i in {1..5}; do
+            if ! ps -p $BACKEND_PID > /dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+        # 强制杀死
+        if ps -p $BACKEND_PID > /dev/null 2>&1; then
+            kill -9 $BACKEND_PID 2>/dev/null || true
+        fi
+        echo -e "${GREEN}✓${NC} Backend已停止"
+    else
+        echo -e "${YELLOW}⚠${NC} Backend进程不存在"
+    fi
+    rm -f "$BACKEND_PID_FILE"
+else
+    echo -e "${YELLOW}⚠${NC} 未找到Backend PID文件"
+fi
+
+# 停止Frontend
+if [ -f "$FRONTEND_PID_FILE" ]; then
+    FRONTEND_PID=$(cat "$FRONTEND_PID_FILE")
+    if ps -p $FRONTEND_PID > /dev/null 2>&1; then
+        echo -e "${YELLOW}→${NC} 停止Frontend (PID: $FRONTEND_PID)..."
+        kill $FRONTEND_PID 2>/dev/null || true
+        # 等待进程结束
+        for i in {1..5}; do
+            if ! ps -p $FRONTEND_PID > /dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+        # 强制杀死
+        if ps -p $FRONTEND_PID > /dev/null 2>&1; then
+            kill -9 $FRONTEND_PID 2>/dev/null || true
+        fi
+        echo -e "${GREEN}✓${NC} Frontend已停止"
+    else
+        echo -e "${YELLOW}⚠${NC} Frontend进程不存在"
+    fi
+    rm -f "$FRONTEND_PID_FILE"
+else
+    echo -e "${YELLOW}⚠${NC} 未找到Frontend PID文件"
+fi
+
+# 额外清理：杀死可能残留的进程
+echo ""
+echo -e "${BLUE}清理残留进程...${NC}"
+
+# 清理Backend进程
+BACKEND_PIDS=$(ps aux | grep "[p]ython main.py" | grep "$PROJECT_ROOT/backend" | awk '{print $2}')
+if [ ! -z "$BACKEND_PIDS" ]; then
+    echo -e "${YELLOW}→${NC} 发现残留Backend进程: $BACKEND_PIDS"
+    echo $BACKEND_PIDS | xargs kill -9 2>/dev/null || true
+    echo -e "${GREEN}✓${NC} 已清理"
+fi
+
+# 清理Frontend进程
+FRONTEND_PIDS=$(ps aux | grep "[n]pm run dev" | grep "$PROJECT_ROOT/frontend" | awk '{print $2}')
+if [ ! -z "$FRONTEND_PIDS" ]; then
+    echo -e "${YELLOW}→${NC} 发现残留Frontend进程: $FRONTEND_PIDS"
+    echo $FRONTEND_PIDS | xargs kill -9 2>/dev/null || true
+    echo -e "${GREEN}✓${NC} 已清理"
+fi
+
+# 清理Vite进程
+VITE_PIDS=$(pgrep -f "vite" 2>/dev/null || true)
+if [ ! -z "$VITE_PIDS" ]; then
+    echo -e "${YELLOW}→${NC} 发现Vite进程: $VITE_PIDS"
+    echo $VITE_PIDS | xargs kill -9 2>/dev/null || true
+    echo -e "${GREEN}✓${NC} 已清理"
+fi
+
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}✓ MaterialHub 已停止${NC}"
+echo -e "${GREEN}========================================${NC}"

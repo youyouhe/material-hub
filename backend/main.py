@@ -10,11 +10,13 @@ env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
     load_dotenv(env_path)
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from database import init_db
-from routers import documents, materials, companies, persons
+from database import init_db, get_session
+from routers import documents, materials, companies, persons, auth
+from auth import validate_session
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +32,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Authentication middleware to protect API endpoints."""
+    # Exempt paths that don't require authentication
+    exempt_paths = ["/api/auth/login", "/health", "/docs", "/openapi.json", "/redoc"]
+
+    if request.url.path in exempt_paths:
+        return await call_next(request)
+
+    # Exempt static file serving (images)
+    # Users must still be logged in to access the web app and see image URLs
+    if request.url.path.startswith("/api/files/"):
+        return await call_next(request)
+
+    # Protect all /api/* paths except auth/login and files
+    if request.url.path.startswith("/api/"):
+        authorization = request.headers.get("authorization")
+
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Not authenticated"}
+            )
+
+        token = authorization.replace("Bearer ", "")
+
+        with get_session() as db:
+            user = validate_session(db, token)
+            if not user:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or expired session"}
+                )
+
+    return await call_next(request)
+
+
+app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(materials.router)
 app.include_router(companies.router)
@@ -50,5 +91,5 @@ if __name__ == "__main__":
     import uvicorn
     import os
 
-    port = int(os.getenv("PORT", "8101"))
+    port = int(os.getenv("PORT", "8201"))
     uvicorn.run(app, host="0.0.0.0", port=port)

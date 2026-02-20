@@ -1,5 +1,5 @@
 """Router modules"""
 
-from . import documents, materials, companies, persons
+from . import auth, documents, materials, companies, persons
 
-__all__ = ['documents', 'materials', 'companies', 'persons']
+__all__ = ['auth', 'documents', 'materials', 'companies', 'persons']

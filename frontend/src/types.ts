@@ -74,3 +74,16 @@ export interface ExtractionResult {
 }
 
 export type ExpiryStatus = 'valid' | 'expired' | 'all';
+
+export interface User {
+  id: number;
+  username: string;
+  created_at: string;
+  last_login?: string | null;
+}
+
+export interface LoginResponse {
+  token: string;
+  user: User;
+  expires_at: string;
+}

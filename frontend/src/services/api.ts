@@ -1,13 +1,33 @@
-import type { DocumentInfo, MaterialInfo, ExtractionResult, ExpiryStatus, CompanyInfo, PersonInfo } from '../types';
+import type { DocumentInfo, MaterialInfo, ExtractionResult, ExpiryStatus, CompanyInfo, PersonInfo, LoginResponse } from '../types';
+import { getToken, clearToken } from './auth';
 
 const BASE = '/api';
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
+  // Add Authorization header if token exists
+  const token = getToken();
+  const headers = {
+    ...options?.headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const res = await fetch(url, { ...options, headers });
+
+  // Handle 401 Unauthorized - clear token and redirect to login
+  if (res.status === 401) {
+    clearToken();
+    // Only redirect if not already on login/auth pages
+    if (!window.location.pathname.includes('/auth')) {
+      window.location.href = '/';
+    }
+    throw new Error('Session expired. Please login again.');
+  }
+
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(body.detail || `HTTP ${res.status}`);
   }
+
   return res.json();
 }
 
@@ -165,4 +185,35 @@ export async function triggerOCR(materialId: number): Promise<{ status: string; 
 
 export async function getOCRResult(materialId: number): Promise<import('../types').OCRResult> {
   return request<import('../types').OCRResult>(`${BASE}/materials/${materialId}/ocr`);
+}
+
+// --- Authentication ---
+
+export async function login(username: string, password: string): Promise<LoginResponse> {
+  // Don't use request() helper to avoid adding Authorization header
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(body.detail || 'Login failed');
+  }
+
+  return res.json();
+}
+
+export async function logout(): Promise<void> {
+  await request(`${BASE}/auth/logout`, { method: 'POST' });
+}
+
+export async function checkAuth(): Promise<boolean> {
+  try {
+    const result = await request<{ valid: boolean }>(`${BASE}/auth/check`);
+    return result.valid;
+  } catch {
+    return false;
+  }
 }
