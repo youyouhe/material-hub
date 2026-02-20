@@ -7,7 +7,9 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: [
       'mcphubs.cc',
-      '.mcphubs.cc', // 允许所有子域名
+      '.mcphubs.cc',
+      'senseflow.club',
+      '.senseflow.club', // 允许所有子域名
     ],
     proxy: {
       '/api': {

@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
-import { X, ChevronDown, FolderOpen, Plus, ChevronsDown, ChevronsUp } from 'lucide-react';
+import { X, ChevronDown, FolderOpen, Plus, ChevronsDown, ChevronsUp, Save, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import type { PersonInfo, MaterialInfo } from '../types';
+import type { PersonInfo, MaterialInfo, CompanyInfo } from '../types';
 import {
   getPersonMaterials,
   linkMaterialToPerson,
   unlinkMaterialFromPerson,
   updateMaterial,
   deleteMaterial,
-  triggerOCR
+  triggerOCR,
+  listCompanies,
+  updatePerson
 } from '../services/api';
 import MaterialCard from './MaterialCard';
 import MaterialPicker from './MaterialPicker';
@@ -72,9 +74,16 @@ export default function PersonDetailModal({
   const [showPicker, setShowPicker] = useState(false);
   const [ocrViewerMaterial, setOcrViewerMaterial] = useState<MaterialInfo | null>(null);
 
+  // 公司选择器相关
+  const [companies, setCompanies] = useState<CompanyInfo[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
   useEffect(() => {
     if (person) {
       loadMaterials();
+      loadCompanies();
+      setSelectedCompanyId(person.company_id || null);
     }
   }, [person]);
 
@@ -106,6 +115,31 @@ export default function PersonDetailModal({
       toast.error('加载材料失败');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCompanies = async () => {
+    try {
+      const data = await listCompanies();
+      setCompanies(data);
+    } catch (error) {
+      console.error('Failed to load companies:', error);
+    }
+  };
+
+  const handleUpdateCompany = async () => {
+    if (!person) return;
+
+    setIsSaving(true);
+    try {
+      await updatePerson(person.id, { company_id: selectedCompanyId });
+      toast.success('所属公司已更新');
+      onRefresh();
+    } catch (error) {
+      console.error('Failed to update company:', error);
+      toast.error('更新失败');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -230,25 +264,54 @@ export default function PersonDetailModal({
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
                 <h2 className="text-2xl font-bold text-gray-900">{person.name}</h2>
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                  {person.id_number && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-500">身份证号:</span>
-                      <span className="text-gray-900 font-mono">{person.id_number}</span>
-                    </div>
-                  )}
-                  {person.education && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-500">学历:</span>
-                      <span className="text-gray-900">{person.education}</span>
-                    </div>
-                  )}
-                  {person.position && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-500">职位:</span>
-                      <span className="text-gray-900">{person.position}</span>
-                    </div>
-                  )}
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    {person.id_number && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500">身份证号:</span>
+                        <span className="text-gray-900 font-mono">{person.id_number}</span>
+                      </div>
+                    )}
+                    {person.education && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500">学历:</span>
+                        <span className="text-gray-900">{person.education}</span>
+                      </div>
+                    )}
+                    {person.position && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500">职位:</span>
+                        <span className="text-gray-900">{person.position}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 公司选择器 */}
+                  <div className="flex items-center gap-2 text-sm">
+                    <Building2 className="w-4 h-4 text-gray-500" />
+                    <span className="text-gray-500">所属公司:</span>
+                    <select
+                      value={selectedCompanyId || ''}
+                      onChange={(e) => setSelectedCompanyId(e.target.value ? Number(e.target.value) : null)}
+                      className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">-- 未关联公司 --</option>
+                      {companies.map((company) => (
+                        <option key={company.id} value={company.id}>
+                          {company.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleUpdateCompany}
+                      disabled={isSaving || selectedCompanyId === (person.company_id || null)}
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="保存公司关联"
+                    >
+                      <Save className="w-3 h-3" />
+                      {isSaving ? '保存中...' : '保存'}
+                    </button>
+                  </div>
                 </div>
               </div>
               <button

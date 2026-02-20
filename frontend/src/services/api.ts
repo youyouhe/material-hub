@@ -175,6 +175,23 @@ export async function getPersonMaterials(id: number): Promise<{ person: PersonIn
   return request(`${BASE}/persons/${id}/materials`);
 }
 
+export async function updatePerson(
+  id: number,
+  update: {
+    name?: string;
+    id_number?: string;
+    education?: string;
+    position?: string;
+    company_id?: number | null;
+  }
+): Promise<PersonInfo> {
+  return request<PersonInfo>(`${BASE}/persons/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  });
+}
+
 // --- OCR ---
 
 export async function triggerOCR(materialId: number): Promise<{ status: string; message: string; material_id: number }> {
