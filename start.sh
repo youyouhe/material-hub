@@ -43,12 +43,15 @@ else
 fi
 
 # 启动backend (设置OCR服务地址为localhost)
-OCR_SERVICE_URL=http://localhost:8010 nohup python main.py > "$PROJECT_ROOT/backend.log" 2>&1 &
+# 使用 setsid 确保进程完全脱离终端会话
+export OCR_SERVICE_URL=http://localhost:8010
+setsid python main.py > "$PROJECT_ROOT/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > "$BACKEND_PID_FILE"
 echo -e "${GREEN}✓${NC} Backend已启动 (PID: $BACKEND_PID)"
 echo -e "  ${YELLOW}→${NC} 端口: 8201"
 echo -e "  ${YELLOW}→${NC} 日志: $PROJECT_ROOT/backend.log"
+echo -e "  ${YELLOW}→${NC} 提示: 进程已完全脱离终端，关闭终端不会影响服务"
 
 # 等待backend启动
 echo -n "  等待Backend就绪"
@@ -73,7 +76,8 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # 启动frontend
-nohup npm run dev > "$PROJECT_ROOT/frontend.log" 2>&1 &
+# 使用 setsid 确保进程完全脱离终端会话
+setsid npm run dev > "$PROJECT_ROOT/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo $FRONTEND_PID > "$FRONTEND_PID_FILE"
 echo -e "${GREEN}✓${NC} Frontend已启动 (PID: $FRONTEND_PID)"
