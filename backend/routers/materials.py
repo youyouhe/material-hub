@@ -30,6 +30,93 @@ IMAGES_DIR = DATA_DIR / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _detect_section_from_title(title: str) -> Optional[str]:
+    """
+    根据标题智能识别section分类
+
+    Args:
+        title: 材料标题
+
+    Returns:
+        识别的section名称，未识别返回None
+    """
+    title_upper = title.upper()
+
+    # ISO认证相关
+    if 'ISO' in title_upper:
+        return 'ISO认证'
+
+    # 营业执照
+    if any(keyword in title for keyword in ['营业执照', '执照']):
+        return '营业执照'
+
+    # 资质证书
+    if any(keyword in title for keyword in ['资质', '证书', '许可证']):
+        return '资质证书'
+
+    # 身份证
+    if any(keyword in title for keyword in ['身份证', 'ID卡']):
+        return '身份证'
+
+    # 学历证书
+    if any(keyword in title for keyword in ['学历', '毕业证', '学位证']):
+        return '学历证书'
+
+    # 职称证书
+    if any(keyword in title for keyword in ['职称', '职业资格']):
+        return '职称证书'
+
+    return None
+
+
+def _detect_material_type_from_title(title: str) -> Optional[str]:
+    """
+    根据标题智能识别material_type
+    与前端 COMPANY_TYPE_LABELS 和 PERSON_TYPE_LABELS 对应
+
+    Args:
+        title: 材料标题
+
+    Returns:
+        识别的material_type，未识别返回None
+    """
+    title_upper = title.upper()
+
+    # ISO认证
+    if 'ISO' in title_upper:
+        return 'iso_cert'
+
+    # 营业执照
+    if any(keyword in title for keyword in ['营业执照', '执照']):
+        return 'license'
+
+    # 法定代表人证明
+    if any(keyword in title for keyword in ['法定代表人', '法人证明', '法人资格']):
+        return 'legal_person_cert'
+
+    # 资质证书
+    if any(keyword in title for keyword in ['资质']):
+        return 'qualification'
+
+    # 身份证
+    if any(keyword in title for keyword in ['身份证', 'ID卡']):
+        return 'id_card'
+
+    # 学历证书
+    if any(keyword in title for keyword in ['学历', '毕业证', '学位证']):
+        return 'education'
+
+    # 职业/职称证书
+    if any(keyword in title for keyword in ['职称', '职业资格', '职业证书']):
+        return 'certificate'
+
+    # 通用证书
+    if any(keyword in title for keyword in ['证书', '许可证']):
+        return 'certificate'
+
+    return None
+
+
 @router.post("/materials/upload")
 async def upload_single_image(
     image: UploadFile = File(...),
@@ -70,12 +157,19 @@ async def upload_single_image(
         safe_title = title or original_name
         image_filename = f"{safe_title}_{file_hash}{ext}"
 
+        # 智能识别material_type：根据title自动归类
+        # 注意：不设置section，让前端统一按material_type分组，避免重复分组
+        detected_type = _detect_material_type_from_title(safe_title)
+
         # 保存图片
         image_path = IMAGES_DIR / image_filename
         with open(image_path, 'wb') as f:
             f.write(image_data)
 
-        logger.info(f"📸 手动上传图片: {image_filename} ({len(image_data)} bytes)")
+        if detected_type:
+            logger.info(f"📸 手动上传图片: {image_filename} ({len(image_data)} bytes) - 识别为: type={detected_type}")
+        else:
+            logger.info(f"📸 手动上传图片: {image_filename} ({len(image_data)} bytes)")
 
         # 创建Material记录
         with get_session() as session:
@@ -95,10 +189,12 @@ async def upload_single_image(
                 session.flush()
 
             # 创建材料记录
+            # 注意：手动上传的材料不设置section，统一按material_type分组，避免与docx提取的材料分组冲突
             material = Material(
                 document_id=manual_doc.id,
                 company_id=company_id,
-                section=section or "手动上传",
+                section="",  # 留空，让前端按material_type分组
+                material_type=detected_type,
                 title=safe_title,
                 heading_level=2,
                 image_filename=image_filename,
@@ -263,14 +359,22 @@ async def delete_material(material_id: int):
 
 @router.get("/files/{filename:path}")
 async def serve_file(filename: str):
-    """Serve extracted image files."""
+    """Serve image files from both FILES_DIR (docx extracted) and IMAGES_DIR (manual upload)."""
+    # Try FILES_DIR first (docx extracted files)
     file_path = FILES_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+    base_dir = FILES_DIR
 
-    # Security: ensure path doesn't escape FILES_DIR
+    if not file_path.exists():
+        # Try IMAGES_DIR (manually uploaded files)
+        file_path = IMAGES_DIR / filename
+        base_dir = IMAGES_DIR
+
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+
+    # Security: ensure path doesn't escape base_dir
     try:
-        file_path.resolve().relative_to(FILES_DIR.resolve())
+        file_path.resolve().relative_to(base_dir.resolve())
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied")
 

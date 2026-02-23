@@ -23,3 +23,48 @@ Thumbs.db
 
 # Data
 backend/data/
+data/
+
+# Logs
+*.log
+monitor.log
+backend.log
+frontend.log
+backup.log
+
+# PID files
+*.pid
+.backend.pid
+.frontend.pid
+
+# Backups
+backups/
+
+# Virtual environments
+backend/venv/
+venv/
+env/
+
+# Temporary files
+*.tmp
+*.temp
+temp_*
+test_*.py
+debug_*.py
+check_*.py
+analyze_*.py
+migrate_*.py
+
+# Documentation (temporary)
+OCR_*.md
+api.md
+
+# Build scripts (temporary)
+force_rebuild.sh
+rebuild_backend.sh
+test_env.sh
+check_timeout.sh
+
+# Chinese filename files
+*[\u4e00-\u9fff]*.docx
+*[\u4e00-\u9fff]*.doc
