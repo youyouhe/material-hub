@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from database import init_db, get_session
-from routers import documents, materials, companies, persons, auth
+from routers import documents, materials, companies, persons, auth, smart_import
 from auth import validate_session
 
 logging.basicConfig(
@@ -108,6 +108,7 @@ app.include_router(documents.router)
 app.include_router(materials.router)
 app.include_router(companies.router)
 app.include_router(persons.router)
+app.include_router(smart_import.router)
 
 
 @app.on_event("startup")

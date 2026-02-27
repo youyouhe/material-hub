@@ -209,6 +209,74 @@ class Material(Base):
         }
 
 
+class PendingReview(Base):
+    """待审核材料导入项"""
+    __tablename__ = "pending_reviews"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    file_path = Column(String, nullable=False)  # 临时文件路径
+    filename = Column(String, nullable=False)  # 原始文件名
+    file_type = Column(String)  # image/document/other
+    analysis_json = Column(String)  # LLM分析结果（JSON）
+    entities_json = Column(String)  # 实体匹配结果（JSON）
+    version_info_json = Column(String)  # 版本信息（JSON）
+    confidence = Column(Integer, default=0)  # 置信度 0-100
+    status = Column(String, default="pending")  # pending/approved/rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    review_notes = Column(String, nullable=True)  # 审核备注
+
+    # 关联
+    reviewer = relationship("User")
+
+    def to_dict(self):
+        import json
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "file_type": self.file_type,
+            "confidence": self.confidence,
+            "status": self.status,
+            "analysis": json.loads(self.analysis_json) if self.analysis_json else None,
+            "entities": json.loads(self.entities_json) if self.entities_json else None,
+            "version_info": json.loads(self.version_info_json) if self.version_info_json else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
+            "reviewed_by": self.reviewed_by,
+            "review_notes": self.review_notes,
+        }
+
+
+class MaterialVersion(Base):
+    """材料版本历史记录"""
+    __tablename__ = "material_versions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
+    previous_material_id = Column(Integer, ForeignKey("materials.id"), nullable=True)
+    relation_type = Column(String)  # renewal/correction/upgrade
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    note = Column(String, nullable=True)
+
+    # 关联
+    material = relationship("Material", foreign_keys=[material_id])
+    previous_material = relationship("Material", foreign_keys=[previous_material_id])
+    creator = relationship("User")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "material_id": self.material_id,
+            "previous_material_id": self.previous_material_id,
+            "relation_type": self.relation_type,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "created_by": self.created_by,
+            "note": self.note,
+        }
+
+
 # --- Engine & Session ---
 
 _engine = None
