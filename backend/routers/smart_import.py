@@ -129,10 +129,22 @@ async def get_pending_review_preview(id: int):
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="文件不存在")
 
+        # 根据文件扩展名确定正确的media_type
+        import mimetypes
+        media_type, _ = mimetypes.guess_type(str(file_path))
+        if not media_type:
+            if item.file_type == "image":
+                media_type = "image/jpeg"
+            else:
+                media_type = "application/pdf"
+
+        # 使用inline而不是attachment，这样浏览器会预览而不是下载
         return FileResponse(
             path=file_path,
-            media_type="image/jpeg" if item.file_type == "image" else "application/pdf",
-            filename=item.filename
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'inline; filename="{item.filename}"'
+            }
         )
 
 
