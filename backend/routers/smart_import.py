@@ -131,6 +131,8 @@ async def get_pending_review_preview(id: int):
 
         # 根据文件扩展名确定正确的media_type
         import mimetypes
+        from urllib.parse import quote
+
         media_type, _ = mimetypes.guess_type(str(file_path))
         if not media_type:
             if item.file_type == "image":
@@ -138,12 +140,13 @@ async def get_pending_review_preview(id: int):
             else:
                 media_type = "application/pdf"
 
-        # 使用inline而不是attachment，这样浏览器会预览而不是下载
+        # 使用RFC 2231编码中文文件名，并使用inline让浏览器预览而不是下载
+        filename_encoded = quote(item.filename)
         return FileResponse(
             path=file_path,
             media_type=media_type,
             headers={
-                "Content-Disposition": f'inline; filename="{item.filename}"'
+                "Content-Disposition": f"inline; filename*=UTF-8''{filename_encoded}"
             }
         )
 
