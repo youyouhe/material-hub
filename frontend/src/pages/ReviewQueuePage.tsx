@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, AlertTriangle, Building2, User, Calendar, Search } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, Building2, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getPendingReviews, getPendingReviewPreviewUrl, approvePendingReview, rejectPendingReview, listCompanies } from '../services/api';
 import type { CompanyInfo } from '../types';
@@ -7,6 +7,7 @@ import type { CompanyInfo } from '../types';
 interface PendingItem {
   id: number;
   filename: string;
+  file_type: string;
   confidence: number;
   status: string;
   created_at: string;
