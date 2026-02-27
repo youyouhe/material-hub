@@ -294,6 +294,26 @@ export async function rejectPendingReview(id: number, reason: string = ''): Prom
   });
 }
 
+export async function reanalyzePendingReview(id: number): Promise<{
+  status: string;
+  message?: string;
+  pending_id?: number;
+  material_id?: number;
+}> {
+  return request(`${BASE}/smart-import/pending-reviews/${id}/reanalyze`, {
+    method: 'POST',
+  });
+}
+
+export async function deletePendingReview(id: number): Promise<{
+  status: string;
+  message: string;
+}> {
+  return request(`${BASE}/smart-import/pending-reviews/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function getSmartImportStats(): Promise<{
   pending: number;
   approved: number;

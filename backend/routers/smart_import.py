@@ -248,6 +248,57 @@ async def reject_pending_review(id: int, reason: str = ""):
         }
 
 
+@router.post("/pending-reviews/{id}/reanalyze")
+async def reanalyze_pending_review(id: int):
+    """
+    重新分析待审核项
+    删除当前记录，重新执行智能导入流程（含OCR）
+    """
+    with get_session() as session:
+        item = session.query(PendingReview).get(id)
+
+        if not item:
+            raise HTTPException(status_code=404, detail="待审核项不存在")
+
+        # 保存文件路径和文件名
+        temp_file_path = item.file_path
+        original_filename = item.filename
+
+        # 检查临时文件是否存在
+        if not os.path.exists(temp_file_path):
+            raise HTTPException(status_code=404, detail="临时文件不存在")
+
+        # 删除旧的数据库记录
+        session.delete(item)
+        session.commit()
+
+    # 创建UploadFile对象模拟上传
+    from fastapi import UploadFile
+    import io
+
+    # 读取临时文件内容
+    with open(temp_file_path, 'rb') as f:
+        file_content = f.read()
+
+    # 创建模拟的UploadFile对象
+    mock_file = UploadFile(
+        filename=original_filename,
+        file=io.BytesIO(file_content)
+    )
+
+    # 重新执行智能导入流程
+    pipeline = SmartImportPipeline()
+    logger.info(f"🔄 重新分析: {original_filename}")
+
+    try:
+        result = await pipeline.process_single_file(mock_file)
+        logger.info(f"✅ 重新分析完成: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"重新分析失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"重新分析失败: {str(e)}")
+
+
 @router.delete("/pending-reviews/{id}")
 async def delete_pending_review(id: int):
     """

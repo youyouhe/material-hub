@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, AlertTriangle, Building2, Search } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, Building2, Search, RefreshCw, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getPendingReviews, getPendingReviewPreviewUrl, approvePendingReview, rejectPendingReview, listCompanies } from '../services/api';
+import { getPendingReviews, getPendingReviewPreviewUrl, approvePendingReview, rejectPendingReview, reanalyzePendingReview, deletePendingReview, listCompanies } from '../services/api';
 import type { CompanyInfo } from '../types';
 
 interface PendingItem {
@@ -125,6 +125,51 @@ export default function ReviewQueuePage() {
     }
   };
 
+  const handleReanalyze = async () => {
+    if (!currentItem) return;
+
+    if (!confirm('确定要重新分析这个文件吗？\n将重新执行文本提取和OCR识别，可能需要一些时间。')) {
+      return;
+    }
+
+    try {
+      toast('正在重新分析...', { icon: '🔄' });
+      const result = await reanalyzePendingReview(currentItem.id);
+
+      if (result.status === 'auto_archived') {
+        toast.success('重新分析完成，已自动归档！');
+      } else if (result.status === 'pending_review') {
+        toast.success('重新分析完成，请继续审核！');
+      }
+
+      // 重新加载待审核列表
+      await loadPendingItems();
+    } catch (error) {
+      console.error('重新分析错误:', error);
+      toast.error('重新分析失败');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!currentItem) return;
+
+    if (!confirm('确定要删除这个待审核项吗？\n此操作不可恢复。')) {
+      return;
+    }
+
+    try {
+      await deletePendingReview(currentItem.id);
+      toast.success('已删除');
+      const newItems = items.filter(item => item.id !== currentItem.id);
+      setItems(newItems);
+      setCurrentItem(newItems.length > 0 ? newItems[0] : null);
+      setCorrections({});
+    } catch (error) {
+      console.error('删除错误:', error);
+      toast.error('删除失败');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -209,6 +254,25 @@ export default function ReviewQueuePage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* 低置信度提示 */}
+            {(currentItem.confidence < 60 || currentItem.analysis?.material_type === 'unknown') && (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium text-yellow-900 mb-1">
+                      识别结果不理想
+                    </h4>
+                    <p className="text-sm text-yellow-700">
+                      {currentItem.confidence < 60 && '置信度较低，'}
+                      {currentItem.analysis?.material_type === 'unknown' && '无法确定材料类型。'}
+                      建议使用"重新分析"功能，系统将重新执行文本提取和OCR识别。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 文件预览 */}
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-2">文件预览</h3>
@@ -479,21 +543,42 @@ export default function ReviewQueuePage() {
           </div>
 
           {/* 操作按钮 */}
-          <div className="p-4 border-t border-gray-200 bg-gray-50 flex gap-3">
-            <button
-              onClick={handleApprove}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-            >
-              <CheckCircle className="w-4 h-4" />
-              确认归档
-            </button>
-            <button
-              onClick={handleReject}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-            >
-              <XCircle className="w-4 h-4" />
-              拒绝
-            </button>
+          <div className="p-4 border-t border-gray-200 bg-gray-50 space-y-2">
+            {/* 主要操作 */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleApprove}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+              >
+                <CheckCircle className="w-4 h-4" />
+                确认归档
+              </button>
+              <button
+                onClick={handleReject}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <XCircle className="w-4 h-4" />
+                拒绝
+              </button>
+            </div>
+
+            {/* 次要操作 */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleReanalyze}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100"
+              >
+                <RefreshCw className="w-4 h-4" />
+                重新分析
+              </button>
+              <button
+                onClick={handleDelete}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100"
+              >
+                <Trash2 className="w-4 h-4" />
+                删除
+              </button>
+            </div>
           </div>
         </div>
       )}
