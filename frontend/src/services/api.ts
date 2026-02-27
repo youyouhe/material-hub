@@ -267,7 +267,8 @@ export async function getPendingReview(id: number): Promise<any> {
 }
 
 export function getPendingReviewPreviewUrl(id: number): string {
-  return `${BASE}/smart-import/pending-reviews/${id}/preview`;
+  const token = getToken();
+  return `${BASE}/smart-import/pending-reviews/${id}/preview?token=${token}`;
 }
 
 export async function approvePendingReview(id: number, corrections?: any): Promise<{

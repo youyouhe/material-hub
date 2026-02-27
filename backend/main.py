@@ -84,13 +84,20 @@ async def auth_middleware(request: Request, call_next):
     if request.url.path.startswith("/api/"):
         authorization = request.headers.get("authorization")
 
-        if not authorization or not authorization.startswith("Bearer "):
+        # Check if token is in query params (for image preview)
+        token = None
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+        else:
+            # Try to get token from query params
+            query_params = dict(request.query_params)
+            token = query_params.get("token")
+
+        if not token:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Not authenticated"}
             )
-
-        token = authorization.replace("Bearer ", "")
 
         with get_session() as db:
             user = validate_session(db, token)

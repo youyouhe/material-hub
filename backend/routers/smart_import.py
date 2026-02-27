@@ -116,6 +116,8 @@ async def get_pending_review(id: int):
 async def get_pending_review_preview(id: int):
     """
     获取待审核项的文件预览
+    支持通过URL参数传递token: ?token=xxx
+    (认证由中间件处理)
     """
     with get_session() as session:
         item = session.query(PendingReview).get(id)
