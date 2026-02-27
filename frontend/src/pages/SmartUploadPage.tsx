@@ -74,7 +74,7 @@ export default function SmartUploadPage() {
         toast.success(`成功自动归档 ${data.auto_archived} 个文件`);
       }
       if (data.pending_review > 0) {
-        toast.info(`${data.pending_review} 个文件需要人工审核`);
+        toast(`${data.pending_review} 个文件需要人工审核`, { icon: '⚠️' });
       }
       if (data.failed > 0) {
         toast.error(`${data.failed} 个文件处理失败`);
