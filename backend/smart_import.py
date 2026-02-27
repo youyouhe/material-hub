@@ -563,6 +563,7 @@ class SmartImportPipeline:
         self.content_extractor = ContentExtractor()
         self.intelligent_analyzer = IntelligentAnalyzer()
         self.entity_matcher = EntityMatcher()
+        self.auto_archiver = AutoArchiver()
 
     async def process_single_file(self, file: UploadFile) -> Dict:
         """处理单个文件的完整流程"""
@@ -601,14 +602,21 @@ class SmartImportPipeline:
 
             # 7. 决策：自动归档 or 人工审核
             if overall_confidence >= 0.85:
-                # TODO: 自动归档（下一步实现）
-                logger.info(f"✅ 置信度高，将自动归档")
+                # 自动归档
+                logger.info(f"✅ 置信度高，执行自动归档")
+                material = await self.auto_archiver.archive(
+                    temp_path=str(temp_path),
+                    filename=file.filename,
+                    file_info=file_info,
+                    analysis=analysis,
+                    entities=entities
+                )
                 return {
                     "status": "auto_archived",
+                    "material_id": material.id,
                     "filename": file.filename,
                     "confidence": overall_confidence,
-                    "analysis": analysis,
-                    "entities": entities
+                    "message": f"已自动归档: {material.title}"
                 }
             else:
                 # 创建待审核项
@@ -677,3 +685,233 @@ class SmartImportPipeline:
             session.add(pending)
             session.commit()
             return pending.id
+
+
+class AutoArchiver:
+    """自动归档器 - 创建材料记录和实体"""
+
+    def __init__(self):
+        self.data_dir = Path(os.getenv("DATA_DIR", "data"))
+        self.files_dir = self.data_dir / "files"
+        self.images_dir = self.data_dir / "images"
+        self.files_dir.mkdir(parents=True, exist_ok=True)
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+
+    async def archive(
+        self,
+        temp_path: str,
+        filename: str,
+        file_info: Dict,
+        analysis: Dict,
+        entities: Dict
+    ) -> Material:
+        """执行自动归档"""
+        logger.info(f"🗄️ 开始自动归档: {filename}")
+
+        with get_session() as session:
+            # 1. 创建或获取公司
+            company_id = await self._get_or_create_company(session, entities, analysis)
+
+            # 2. 创建或获取人员
+            person_id = await self._get_or_create_person(session, entities, analysis, company_id)
+
+            # 3. 保存文件到永久位置
+            saved_file_path = self._save_file_permanent(temp_path, filename, file_info)
+
+            # 4. 创建Document记录（如果需要）
+            document = self._get_or_create_document(session, filename, company_id)
+
+            # 5. 创建Material记录
+            material = self._create_material(
+                session,
+                document_id=document.id,
+                company_id=company_id,
+                person_id=person_id,
+                saved_file_path=saved_file_path,
+                filename=filename,
+                analysis=analysis
+            )
+
+            session.commit()
+            logger.info(f"✅ 归档完成: Material ID={material.id}, {material.title}")
+
+            # 6. 清理临时文件
+            try:
+                Path(temp_path).unlink()
+            except:
+                pass
+
+            return material
+
+    async def _get_or_create_company(
+        self,
+        session,
+        entities: Dict,
+        analysis: Dict
+    ) -> Optional[int]:
+        """获取或创建公司"""
+        company_id = entities.get("company_id")
+
+        # 如果已匹配到公司，直接返回
+        if company_id:
+            logger.info(f"  ✓ 使用已匹配公司 ID={company_id}")
+            return company_id
+
+        # 如果需要创建新公司
+        if entities.get("new_company_info"):
+            company_info = entities["new_company_info"]
+            company = Company(
+                name=company_info.get("name"),
+                legal_person=company_info.get("legal_person"),
+                credit_code=company_info.get("credit_code"),
+                address=company_info.get("address")
+            )
+            session.add(company)
+            session.flush()
+            logger.info(f"  ✓ 创建新公司: {company.name} (ID={company.id})")
+            return company.id
+
+        return None
+
+    async def _get_or_create_person(
+        self,
+        session,
+        entities: Dict,
+        analysis: Dict,
+        company_id: Optional[int]
+    ) -> Optional[int]:
+        """获取或创建人员"""
+        person_id = entities.get("person_id")
+
+        # 如果已匹配到人员，直接返回
+        if person_id:
+            logger.info(f"  ✓ 使用已匹配人员 ID={person_id}")
+            return person_id
+
+        # 如果需要创建新人员
+        if entities.get("new_person_info"):
+            person_info = entities["new_person_info"]
+            person = Person(
+                name=person_info.get("name"),
+                id_number=person_info.get("id_number"),
+                education=person_info.get("education"),
+                position=person_info.get("position"),
+                company_id=company_id
+            )
+            session.add(person)
+            session.flush()
+            logger.info(f"  ✓ 创建新人员: {person.name} (ID={person.id})")
+            return person.id
+
+        return None
+
+    def _save_file_permanent(
+        self,
+        temp_path: str,
+        filename: str,
+        file_info: Dict
+    ) -> str:
+        """保存文件到永久位置"""
+        # 生成唯一文件名
+        ext = Path(filename).suffix
+        unique_filename = f"{uuid.uuid4()}{ext}"
+
+        # 根据文件类型选择目录
+        if file_info["type"] == "image":
+            target_dir = self.images_dir
+        else:
+            target_dir = self.files_dir
+
+        target_path = target_dir / unique_filename
+
+        # 移动文件
+        import shutil
+        shutil.move(temp_path, target_path)
+
+        logger.info(f"  ✓ 文件已保存: {target_path}")
+        return str(target_path)
+
+    def _get_or_create_document(
+        self,
+        session,
+        filename: str,
+        company_id: Optional[int]
+    ) -> Document:
+        """获取或创建Document记录"""
+        # 对于智能导入，每个文件创建一个独立的Document
+        document = Document(
+            filename=filename,
+            company_id=company_id,
+            section_count=0,
+            image_count=1
+        )
+        session.add(document)
+        session.flush()
+        logger.info(f"  ✓ 创建Document记录 ID={document.id}")
+        return document
+
+    def _create_material(
+        self,
+        session,
+        document_id: int,
+        company_id: Optional[int],
+        person_id: Optional[int],
+        saved_file_path: str,
+        filename: str,
+        analysis: Dict
+    ) -> Material:
+        """创建Material记录"""
+        # 解析有效期
+        expiry_date = None
+        if analysis.get("key_dates", {}).get("expiry_date"):
+            try:
+                from datetime import datetime
+                expiry_date = datetime.strptime(
+                    analysis["key_dates"]["expiry_date"],
+                    "%Y-%m-%d"
+                ).date()
+            except:
+                pass
+
+        # 确定section
+        section = self._determine_section(analysis.get("material_type"))
+
+        # 创建材料
+        material = Material(
+            document_id=document_id,
+            company_id=company_id,
+            person_id=person_id,
+            title=analysis.get("material_name") or filename,
+            section=section,
+            image_filename=Path(saved_file_path).name,
+            image_path=saved_file_path,
+            file_size=Path(saved_file_path).stat().st_size,
+            material_type=analysis.get("material_type"),
+            ocr_text=analysis.get("_extracted_text"),
+            extracted_json=json.dumps({
+                k: v for k, v in analysis.items()
+                if k != "_extracted_text"
+            }, ensure_ascii=False),
+            expiry_date=expiry_date,
+            ocr_status="completed",
+            ocr_processed_at=datetime.utcnow()
+        )
+
+        session.add(material)
+        session.flush()
+
+        logger.info(f"  ✓ 创建Material记录: {material.title} (ID={material.id})")
+        return material
+
+    def _determine_section(self, material_type: Optional[str]) -> str:
+        """根据材料类型确定section"""
+        type_to_section = {
+            "license": "营业执照",
+            "qualification": "资质证书",
+            "iso_cert": "ISO认证",
+            "id_card": "身份证",
+            "education_cert": "学历证书",
+            "legal_person_cert": "法人证明",
+            "contract": "合同",
+        }
+        return type_to_section.get(material_type, "其他材料")

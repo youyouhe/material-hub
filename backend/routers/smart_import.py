@@ -146,6 +146,9 @@ async def approve_pending_review(id: int, corrections: Optional[dict] = None):
         "expiry_date": "2026-12-31"
     }
     """
+    import json
+    from smart_import import AutoArchiver
+
     with get_session() as session:
         item = session.query(PendingReview).get(id)
 
@@ -155,21 +158,43 @@ async def approve_pending_review(id: int, corrections: Optional[dict] = None):
         if item.status != "pending":
             raise HTTPException(status_code=400, detail="该项已经被审核过")
 
-        # TODO: 执行实际的归档操作（下一步实现）
+        # 解析存储的数据
+        analysis = json.loads(item.analysis_json)
+        entities = json.loads(item.entities_json)
+        file_info = {"type": item.file_type, "extension": Path(item.filename).suffix}
+
+        # 应用用户修正
+        if corrections:
+            if "company_id" in corrections:
+                entities["company_id"] = corrections["company_id"]
+            if "material_type" in corrections:
+                analysis["material_type"] = corrections["material_type"]
+            if "material_name" in corrections:
+                analysis["material_name"] = corrections["material_name"]
+            if "expiry_date" in corrections:
+                if not analysis.get("key_dates"):
+                    analysis["key_dates"] = {}
+                analysis["key_dates"]["expiry_date"] = corrections["expiry_date"]
+
+        # 执行归档
+        archiver = AutoArchiver()
+        material = await archiver.archive(
+            temp_path=item.file_path,
+            filename=item.filename,
+            file_info=file_info,
+            analysis=analysis,
+            entities=entities
+        )
 
         # 更新审核状态
         item.status = "approved"
         item.reviewed_at = __import__('datetime').datetime.utcnow()
         session.commit()
 
-        # 删除临时文件
-        file_path = Path(item.file_path)
-        if file_path.exists():
-            file_path.unlink()
-
         return {
             "status": "success",
             "message": "已批准并归档",
+            "material_id": material.id,
             "pending_id": id
         }
 
