@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Building2, User, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getPendingReviews, getPendingReviewPreviewUrl, approvePendingReview, rejectPendingReview } from '../services/api';
 
 interface PendingItem {
   id: number;
@@ -62,19 +63,10 @@ export default function ReviewQueuePage() {
 
   const loadPendingItems = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8201/api/smart-import/pending-reviews', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setItems(data.items);
-        if (data.items.length > 0) {
-          setCurrentItem(data.items[0]);
-        }
+      const data = await getPendingReviews('pending', 50);
+      setItems(data.items);
+      if (data.items.length > 0) {
+        setCurrentItem(data.items[0]);
       }
     } catch (error) {
       console.error('加载失败:', error);
@@ -88,29 +80,13 @@ export default function ReviewQueuePage() {
     if (!currentItem) return;
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `http://localhost:8201/api/smart-import/pending-reviews/${currentItem.id}/approve`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(corrections)
-        }
-      );
-
-      if (response.ok) {
-        toast.success('已批准并归档');
-        // 移除当前项，显示下一项
-        const newItems = items.filter(item => item.id !== currentItem.id);
-        setItems(newItems);
-        setCurrentItem(newItems.length > 0 ? newItems[0] : null);
-        setCorrections({});
-      } else {
-        toast.error('批准失败');
-      }
+      await approvePendingReview(currentItem.id, corrections);
+      toast.success('已批准并归档');
+      // 移除当前项，显示下一项
+      const newItems = items.filter(item => item.id !== currentItem.id);
+      setItems(newItems);
+      setCurrentItem(newItems.length > 0 ? newItems[0] : null);
+      setCorrections({});
     } catch (error) {
       console.error('批准错误:', error);
       toast.error('批准失败');
@@ -123,28 +99,12 @@ export default function ReviewQueuePage() {
     const reason = prompt('请输入拒绝原因（可选）:');
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `http://localhost:8201/api/smart-import/pending-reviews/${currentItem.id}/reject`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ reason: reason || '' })
-        }
-      );
-
-      if (response.ok) {
-        toast.success('已拒绝');
-        const newItems = items.filter(item => item.id !== currentItem.id);
-        setItems(newItems);
-        setCurrentItem(newItems.length > 0 ? newItems[0] : null);
-        setCorrections({});
-      } else {
-        toast.error('拒绝失败');
-      }
+      await rejectPendingReview(currentItem.id, reason || '');
+      toast.success('已拒绝');
+      const newItems = items.filter(item => item.id !== currentItem.id);
+      setItems(newItems);
+      setCurrentItem(newItems.length > 0 ? newItems[0] : null);
+      setCorrections({});
     } catch (error) {
       console.error('拒绝错误:', error);
       toast.error('拒绝失败');
@@ -240,7 +200,7 @@ export default function ReviewQueuePage() {
               <h3 className="text-sm font-medium text-gray-700 mb-2">文件预览</h3>
               <div className="bg-gray-100 rounded-lg p-4 h-64 flex items-center justify-center">
                 <img
-                  src={`http://localhost:8201/api/smart-import/pending-reviews/${currentItem.id}/preview`}
+                  src={getPendingReviewPreviewUrl(currentItem.id)}
                   alt="预览"
                   className="max-h-full max-w-full object-contain"
                   onError={(e) => {

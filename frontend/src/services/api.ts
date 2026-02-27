@@ -234,3 +234,70 @@ export async function checkAuth(): Promise<boolean> {
     return false;
   }
 }
+
+// --- Smart Import ---
+
+export async function smartImportBatch(files: File[]): Promise<{
+  total: number;
+  auto_archived: number;
+  pending_review: number;
+  failed: number;
+  items: any[];
+}> {
+  const formData = new FormData();
+  files.forEach(file => {
+    formData.append('files', file);
+  });
+
+  return request(`${BASE}/smart-import/batch`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function getPendingReviews(status: string = 'pending', limit: number = 50): Promise<{
+  total: number;
+  items: any[];
+}> {
+  return request(`${BASE}/smart-import/pending-reviews?status=${status}&limit=${limit}`);
+}
+
+export async function getPendingReview(id: number): Promise<any> {
+  return request(`${BASE}/smart-import/pending-reviews/${id}`);
+}
+
+export function getPendingReviewPreviewUrl(id: number): string {
+  return `${BASE}/smart-import/pending-reviews/${id}/preview`;
+}
+
+export async function approvePendingReview(id: number, corrections?: any): Promise<{
+  status: string;
+  message: string;
+  material_id?: number;
+}> {
+  return request(`${BASE}/smart-import/pending-reviews/${id}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(corrections || {}),
+  });
+}
+
+export async function rejectPendingReview(id: number, reason: string = ''): Promise<{
+  status: string;
+  message: string;
+}> {
+  return request(`${BASE}/smart-import/pending-reviews/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function getSmartImportStats(): Promise<{
+  pending: number;
+  approved: number;
+  rejected: number;
+  total: number;
+}> {
+  return request(`${BASE}/smart-import/stats`);
+}

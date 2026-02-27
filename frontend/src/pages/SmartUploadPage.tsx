@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Upload, CheckCircle, AlertCircle, XCircle, FileText, Image as ImageIcon, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { smartImportBatch } from '../services/api';
 
 interface UploadResult {
   status: 'auto_archived' | 'pending_review' | 'failed';
@@ -66,25 +67,7 @@ export default function SmartUploadPage() {
     setResults(null);
 
     try {
-      const formData = new FormData();
-      files.forEach(file => {
-        formData.append('files', file);
-      });
-
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8201/api/smart-import/batch', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        throw new Error('上传失败');
-      }
-
-      const data: BatchResult = await response.json();
+      const data: BatchResult = await smartImportBatch(files);
       setResults(data);
 
       if (data.auto_archived > 0) {
