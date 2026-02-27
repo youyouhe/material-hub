@@ -1,0 +1,4 @@
+Collecting Pillow
+  Downloading pillow-10.4.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (4.4 MB)
+Installing collected packages: Pillow
+Successfully installed Pillow-10.4.0

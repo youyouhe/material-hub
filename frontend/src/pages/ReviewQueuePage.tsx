@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, AlertTriangle, Building2, User, Calendar } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, Building2, User, Calendar, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getPendingReviews, getPendingReviewPreviewUrl, approvePendingReview, rejectPendingReview } from '../services/api';
+import { getPendingReviews, getPendingReviewPreviewUrl, approvePendingReview, rejectPendingReview, listCompanies } from '../services/api';
+import type { CompanyInfo } from '../types';
 
 interface PendingItem {
   id: number;
@@ -56,10 +57,22 @@ export default function ReviewQueuePage() {
   const [currentItem, setCurrentItem] = useState<PendingItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [corrections, setCorrections] = useState<any>({});
+  const [allCompanies, setAllCompanies] = useState<CompanyInfo[]>([]);
+  const [companySearchTerm, setCompanySearchTerm] = useState('');
 
   useEffect(() => {
     loadPendingItems();
+    loadAllCompanies();
   }, []);
+
+  const loadAllCompanies = async () => {
+    try {
+      const companies = await listCompanies();
+      setAllCompanies(companies);
+    } catch (error) {
+      console.error('加载公司列表失败:', error);
+    }
+  };
 
   const loadPendingItems = async () => {
     try {
@@ -327,12 +340,105 @@ export default function ReviewQueuePage() {
                   </button>
                 </div>
               ) : (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <div className="text-sm font-medium text-blue-900 mb-1">
-                    新公司
-                  </div>
-                  <div className="text-sm text-blue-700">
-                    {currentItem.entities.company_name}
+                <div className="space-y-3">
+                  {/* 显示从文件名或内容中提取的公司信息 */}
+                  {currentItem.entities.company_name && (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                      <div className="text-sm font-medium text-blue-900 mb-1">
+                        识别的公司名称
+                      </div>
+                      <div className="text-sm text-blue-700">
+                        {currentItem.entities.company_name}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 手动搜索和选择公司 */}
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-2">
+                      手动关联公司
+                    </div>
+
+                    {/* 搜索框 */}
+                    <div className="relative mb-2">
+                      <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="搜索公司名称..."
+                        value={companySearchTerm}
+                        onChange={(e) => setCompanySearchTerm(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+
+                    {/* 公司列表 */}
+                    <div className="max-h-48 overflow-y-auto space-y-1 border border-gray-200 rounded-md">
+                      {allCompanies
+                        .filter(company =>
+                          company.name.toLowerCase().includes(companySearchTerm.toLowerCase())
+                        )
+                        .map((company) => (
+                          <button
+                            key={company.id}
+                            onClick={() => {
+                              setCorrections({ ...corrections, company_id: company.id });
+                              setCompanySearchTerm('');
+                            }}
+                            className={`
+                              w-full p-2 text-left text-sm transition-colors
+                              ${corrections.company_id === company.id ?
+                                'bg-blue-100 text-blue-900' :
+                                'hover:bg-gray-50'}
+                            `}
+                          >
+                            <div className="font-medium">{company.name}</div>
+                            {company.credit_code && (
+                              <div className="text-xs text-gray-600">{company.credit_code}</div>
+                            )}
+                          </button>
+                        ))}
+
+                      {allCompanies.filter(company =>
+                        company.name.toLowerCase().includes(companySearchTerm.toLowerCase())
+                      ).length === 0 && (
+                        <div className="p-3 text-center text-sm text-gray-500">
+                          没有找到匹配的公司
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 选中的公司 */}
+                    {corrections.company_id && corrections.company_id !== 'new' && (
+                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-md">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-green-700">
+                            <CheckCircle className="w-4 h-4 inline mr-1" />
+                            已选择: {allCompanies.find(c => c.id === corrections.company_id)?.name}
+                          </div>
+                          <button
+                            onClick={() => setCorrections({ ...corrections, company_id: undefined })}
+                            className="text-xs text-red-600 hover:text-red-700"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 创建新公司选项 */}
+                    <button
+                      onClick={() => setCorrections({ ...corrections, company_id: 'new' })}
+                      className={`
+                        w-full mt-2 p-3 text-left rounded-md border transition-colors
+                        ${corrections.company_id === 'new' ?
+                          'border-blue-500 bg-blue-50' :
+                          'border-gray-300 hover:border-gray-400'}
+                      `}
+                    >
+                      <div className="text-sm font-medium text-gray-900">
+                        ➕ 创建新公司{currentItem.entities.company_name ? `: ${currentItem.entities.company_name}` : ''}
+                      </div>
+                    </button>
                   </div>
                 </div>
               )}

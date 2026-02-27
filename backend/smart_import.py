@@ -161,7 +161,7 @@ class ContentExtractor:
             text = page.get_text()
             text_content.append(text)
 
-            # 提取图片
+            # 提取嵌入的图片
             image_list = page.get_images()
             for img_index, img in enumerate(image_list):
                 xref = img[0]
@@ -176,10 +176,43 @@ class ContentExtractor:
 
         full_text = "\n".join(text_content)
 
-        # 如果PDF是扫描件（文本很少），对图片OCR
-        if len(full_text.strip()) < 100 and images and check_ocr_service():
+        # 如果PDF是扫描件（文本很少），将PDF页面渲染为图片并OCR
+        if len(full_text.strip()) < 100 and check_ocr_service():
+            logger.info("检测到扫描PDF，将页面转为图片进行OCR...")
             ocr_texts = []
-            for img_path in images:
+
+            # 只处理前5页，避免处理时间过长
+            max_pages = min(5, len(doc))
+
+            for page_num in range(max_pages):
+                page = doc[page_num]
+
+                # 将页面渲染为图片 (300 DPI)
+                mat = fitz.Matrix(300/72, 300/72)  # 提高分辨率以改善OCR效果
+                pix = page.get_pixmap(matrix=mat)
+
+                # 保存为临时图片
+                page_img_path = TEMP_DIR / f"pdf_page_{uuid.uuid4()}.png"
+                pix.save(str(page_img_path))
+                images.append(str(page_img_path))
+
+                # OCR识别
+                logger.info(f"OCR处理第 {page_num + 1}/{max_pages} 页...")
+                ocr_text = ocr_image(str(page_img_path))
+                if ocr_text:
+                    ocr_texts.append(f"=== 第{page_num + 1}页 ===\n{ocr_text}")
+
+            if ocr_texts:
+                full_text = "\n\n".join(ocr_texts)
+                logger.info(f"OCR完成，提取文本 {len(full_text)} 字符")
+            else:
+                logger.warning("OCR未能提取到文本")
+
+        # 如果有嵌入图片但文本少，也尝试OCR嵌入图片
+        elif len(full_text.strip()) < 100 and images and check_ocr_service():
+            logger.info("尝试OCR嵌入图片...")
+            ocr_texts = []
+            for img_path in images[:10]:  # 最多10张图片
                 ocr_text = ocr_image(img_path)
                 if ocr_text:
                     ocr_texts.append(ocr_text)
