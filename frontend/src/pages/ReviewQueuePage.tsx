@@ -198,16 +198,40 @@ export default function ReviewQueuePage() {
             {/* 文件预览 */}
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-2">文件预览</h3>
-              <div className="bg-gray-100 rounded-lg p-4 h-64 flex items-center justify-center">
-                <img
-                  src={getPendingReviewPreviewUrl(currentItem.id)}
-                  alt="预览"
-                  className="max-h-full max-w-full object-contain"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                    e.currentTarget.parentElement!.innerHTML = '<p class="text-gray-500">无法预览</p>';
-                  }}
-                />
+              <div className="bg-gray-100 rounded-lg p-4 h-96 flex items-center justify-center overflow-hidden">
+                {currentItem.file_type === 'image' ? (
+                  <img
+                    src={getPendingReviewPreviewUrl(currentItem.id)}
+                    alt="预览"
+                    className="max-h-full max-w-full object-contain"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.parentElement!.innerHTML = '<p class="text-gray-500">图片加载失败</p>';
+                    }}
+                  />
+                ) : currentItem.file_type === 'document' ? (
+                  <iframe
+                    src={getPendingReviewPreviewUrl(currentItem.id)}
+                    className="w-full h-full border-0"
+                    title="文档预览"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.parentElement!.innerHTML = '<p class="text-gray-500">文档加载失败</p>';
+                    }}
+                  />
+                ) : (
+                  <div className="text-center">
+                    <p className="text-gray-500 mb-2">无法预览此文件类型</p>
+                    <a
+                      href={getPendingReviewPreviewUrl(currentItem.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-700 underline"
+                    >
+                      下载查看
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
 
