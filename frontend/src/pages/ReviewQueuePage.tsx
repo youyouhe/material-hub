@@ -57,6 +57,7 @@ export default function ReviewQueuePage() {
   const [items, setItems] = useState<PendingItem[]>([]);
   const [currentItem, setCurrentItem] = useState<PendingItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reanalyzing, setReanalyzing] = useState(false);
   const [corrections, setCorrections] = useState<any>({});
   const [allCompanies, setAllCompanies] = useState<CompanyInfo[]>([]);
   const [companySearchTerm, setCompanySearchTerm] = useState('');
@@ -128,25 +129,36 @@ export default function ReviewQueuePage() {
   const handleReanalyze = async () => {
     if (!currentItem) return;
 
-    if (!confirm('确定要重新分析这个文件吗？\n将重新执行文本提取和OCR识别，可能需要一些时间。')) {
+    const confirmMsg = `确定要重新分析这个文件吗？\n\n文件：${currentItem.filename}\n\n将执行：\n✓ PDF页面渲染（300 DPI高清图片）\n✓ OCR文字识别（全部页面，最多20页）\n✓ LLM智能分析\n\n预计需要 1-3 分钟，请耐心等待。`;
+
+    if (!confirm(confirmMsg)) {
       return;
     }
 
+    setReanalyzing(true);
+    const toastId = toast('🔄 正在重新分析，请稍候...', {
+      icon: '⏳',
+      duration: Infinity
+    });
+
     try {
-      toast('正在重新分析...', { icon: '🔄' });
       const result = await reanalyzePendingReview(currentItem.id);
+      toast.dismiss(toastId);
 
       if (result.status === 'auto_archived') {
-        toast.success('重新分析完成，已自动归档！');
+        toast.success('🎉 重新分析完成，已自动归档！');
       } else if (result.status === 'pending_review') {
-        toast.success('重新分析完成，请继续审核！');
+        toast.success('✅ 重新分析完成，请继续审核！');
       }
 
       // 重新加载待审核列表
       await loadPendingItems();
     } catch (error) {
+      toast.dismiss(toastId);
       console.error('重新分析错误:', error);
-      toast.error('重新分析失败');
+      toast.error('❌ 重新分析失败：' + (error as Error).message);
+    } finally {
+      setReanalyzing(false);
     }
   };
 
@@ -254,8 +266,30 @@ export default function ReviewQueuePage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* 重新分析进度提示 */}
+            {reanalyzing && (
+              <div className="p-6 bg-blue-50 border-2 border-blue-300 rounded-lg">
+                <div className="flex items-center gap-4">
+                  <RefreshCw className="w-8 h-8 text-blue-600 animate-spin flex-shrink-0" />
+                  <div className="flex-1">
+                    <h4 className="text-lg font-semibold text-blue-900 mb-2">
+                      正在重新分析文件...
+                    </h4>
+                    <div className="space-y-1 text-sm text-blue-700">
+                      <p>✓ 正在渲染PDF页面为高清图片（300 DPI）</p>
+                      <p>✓ 正在使用DeepSeek-OCR-2识别文字</p>
+                      <p>✓ 正在使用LLM智能分析内容</p>
+                      <p className="mt-2 font-medium">
+                        请耐心等待，预计需要 1-3 分钟...
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 低置信度提示 */}
-            {(currentItem.confidence < 60 || currentItem.analysis?.material_type === 'unknown') && (
+            {!reanalyzing && (currentItem.confidence < 60 || currentItem.analysis?.material_type === 'unknown') && (
               <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
@@ -548,14 +582,28 @@ export default function ReviewQueuePage() {
             <div className="flex gap-3">
               <button
                 onClick={handleApprove}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                disabled={reanalyzing}
+                className={`
+                  flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white
+                  ${reanalyzing
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-green-600 hover:bg-green-700'
+                  }
+                `}
               >
                 <CheckCircle className="w-4 h-4" />
                 确认归档
               </button>
               <button
                 onClick={handleReject}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                disabled={reanalyzing}
+                className={`
+                  flex-1 flex items-center justify-center gap-2 px-4 py-2 border text-sm font-medium rounded-md
+                  ${reanalyzing
+                    ? 'border-gray-300 text-gray-400 bg-gray-100 cursor-not-allowed'
+                    : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                  }
+                `}
               >
                 <XCircle className="w-4 h-4" />
                 拒绝
@@ -566,14 +614,28 @@ export default function ReviewQueuePage() {
             <div className="flex gap-3">
               <button
                 onClick={handleReanalyze}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100"
+                disabled={reanalyzing}
+                className={`
+                  flex-1 flex items-center justify-center gap-2 px-4 py-2 border text-sm font-medium rounded-md
+                  ${reanalyzing
+                    ? 'border-gray-300 text-gray-400 bg-gray-100 cursor-not-allowed'
+                    : 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                  }
+                `}
               >
-                <RefreshCw className="w-4 h-4" />
-                重新分析
+                <RefreshCw className={`w-4 h-4 ${reanalyzing ? 'animate-spin' : ''}`} />
+                {reanalyzing ? '分析中...' : '重新分析'}
               </button>
               <button
                 onClick={handleDelete}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100"
+                disabled={reanalyzing}
+                className={`
+                  flex-1 flex items-center justify-center gap-2 px-4 py-2 border text-sm font-medium rounded-md
+                  ${reanalyzing
+                    ? 'border-gray-300 text-gray-400 bg-gray-100 cursor-not-allowed'
+                    : 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'
+                  }
+                `}
               >
                 <Trash2 className="w-4 h-4" />
                 删除

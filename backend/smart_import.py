@@ -178,11 +178,16 @@ class ContentExtractor:
 
         # 如果PDF是扫描件（文本很少），将PDF页面渲染为图片并OCR
         if len(full_text.strip()) < 100 and check_ocr_service():
-            logger.info("检测到扫描PDF，将页面转为图片进行OCR...")
+            total_pages = len(doc)
+            logger.info(f"检测到扫描PDF，共{total_pages}页，将全部转为图片进行OCR...")
             ocr_texts = []
 
-            # 只处理前5页，避免处理时间过长
-            max_pages = min(5, len(doc))
+            # 处理所有页面（合同等重要文档需要完整识别）
+            # 如果页数过多（>20页），只处理前20页
+            max_pages = min(20, total_pages)
+
+            if total_pages > 20:
+                logger.warning(f"PDF有{total_pages}页，只处理前20页")
 
             for page_num in range(max_pages):
                 page = doc[page_num]
@@ -197,16 +202,19 @@ class ContentExtractor:
                 images.append(str(page_img_path))
 
                 # OCR识别
-                logger.info(f"OCR处理第 {page_num + 1}/{max_pages} 页...")
+                logger.info(f"📄 OCR处理第 {page_num + 1}/{max_pages} 页...")
                 ocr_text = ocr_image(str(page_img_path))
                 if ocr_text:
                     ocr_texts.append(f"=== 第{page_num + 1}页 ===\n{ocr_text}")
+                    logger.info(f"   ✅ 第{page_num + 1}页识别完成，提取{len(ocr_text)}字符")
+                else:
+                    logger.warning(f"   ⚠️ 第{page_num + 1}页识别失败")
 
             if ocr_texts:
                 full_text = "\n\n".join(ocr_texts)
-                logger.info(f"OCR完成，提取文本 {len(full_text)} 字符")
+                logger.info(f"🎉 OCR完成！共处理{len(ocr_texts)}/{max_pages}页，提取文本 {len(full_text)} 字符")
             else:
-                logger.warning("OCR未能提取到文本")
+                logger.warning("❌ OCR未能提取到任何文本")
 
         # 如果有嵌入图片但文本少，也尝试OCR嵌入图片
         elif len(full_text.strip()) < 100 and images and check_ocr_service():
