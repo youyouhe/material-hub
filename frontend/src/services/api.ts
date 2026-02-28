@@ -294,14 +294,21 @@ export async function rejectPendingReview(id: number, reason: string = ''): Prom
   });
 }
 
-export async function reanalyzePendingReview(id: number): Promise<{
+export async function reanalyzePendingReview(id: number, pageNumbers?: number[]): Promise<{
   status: string;
   message?: string;
   pending_id?: number;
   material_id?: number;
 }> {
+  const body: any = {};
+  if (pageNumbers && pageNumbers.length > 0) {
+    body.page_numbers = pageNumbers;
+  }
+
   return request(`${BASE}/smart-import/pending-reviews/${id}/reanalyze`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
 }
 
@@ -339,4 +346,21 @@ export async function getPendingReviewProgress(id: number): Promise<{
   };
 }> {
   return request(`${BASE}/smart-import/pending-reviews/${id}/progress`);
+}
+
+export async function smartImportSingle(file: File): Promise<{
+  status: string;
+  pending_id?: number;
+  material_id?: number;
+  filename: string;
+  confidence: number;
+  message?: string;
+}> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return request(`${BASE}/smart-import/single`, {
+    method: 'POST',
+    body: formData,
+  });
 }

@@ -11,7 +11,7 @@ from contextlib import contextmanager
 import uuid
 
 from sqlalchemy import (
-    create_engine, Column, Integer, String, DateTime, Date, ForeignKey, event,
+    create_engine, Column, Integer, String, DateTime, Date, Boolean, ForeignKey, event,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 import bcrypt
@@ -159,6 +159,7 @@ class Material(Base):
     image_filename = Column(String, nullable=False)
     image_path = Column(String, nullable=False)
     file_size = Column(Integer, default=0)
+    file_hash = Column(String, nullable=True, index=True)  # 文件MD5 hash，用于去重
     expiry_date = Column(Date, nullable=True)
     ocr_text = Column(String, nullable=True)  # OCR识别的文本
     material_type = Column(String, nullable=True)  # 材料类型：license, id_card, certificate等
@@ -197,6 +198,7 @@ class Material(Base):
             "image_filename": self.image_filename,
             "image_url": f"/api/files/{self.image_filename}",
             "file_size": self.file_size,
+            "file_hash": self.file_hash,
             "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
             "is_expired": expired,
             "material_type": self.material_type,
@@ -217,6 +219,7 @@ class PendingReview(Base):
     file_path = Column(String, nullable=False)  # 临时文件路径
     filename = Column(String, nullable=False)  # 原始文件名
     file_type = Column(String)  # image/document/other
+    file_hash = Column(String, nullable=True, index=True)  # 文件MD5 hash，用于去重
     analysis_json = Column(String)  # LLM分析结果（JSON）
     entities_json = Column(String)  # 实体匹配结果（JSON）
     version_info_json = Column(String)  # 版本信息（JSON）
@@ -256,7 +259,11 @@ class MaterialVersion(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
     previous_material_id = Column(Integer, ForeignKey("materials.id"), nullable=True)
+    version_number = Column(Integer, default=1)  # 版本号
+    is_current = Column(Boolean, default=True)  # 是否当前版本
     relation_type = Column(String)  # renewal/correction/upgrade
+    replaced_at = Column(DateTime, nullable=True)  # 替换时间
+    replaced_reason = Column(String, nullable=True)  # 替换原因
     created_at = Column(DateTime, default=datetime.utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     note = Column(String, nullable=True)

@@ -151,7 +151,41 @@ export default function ReviewQueuePage() {
   const handleReanalyze = async () => {
     if (!currentItem) return;
 
-    const confirmMsg = `确定要重新分析这个文件吗？\n\n文件：${currentItem.filename}\n\n将执行：\n✓ PDF页面渲染（300 DPI高清图片）\n✓ OCR文字识别（全部页面，最多20页）\n✓ LLM智能分析\n\n预计需要 1-3 分钟，请耐心等待。`;
+    // 询问用户是否要指定页码
+    const choosePages = confirm(`重新分析选项：\n\n点击【确定】：手动指定要扫描的页码（推荐）\n点击【取消】：自动扫描前5页\n\n手动指定页码可以更精准地分析关键页面。`);
+
+    let pageNumbers: number[] | undefined = undefined;
+
+    if (choosePages) {
+      const pageInput = prompt(
+        `请输入要扫描的页码（用逗号分隔）：\n\n示例：\n  - 单页：1\n  - 多页：1,3,5\n  - 连续：1,2,3,4,5\n\n提示：通常合同的第1页和最后几页包含关键信息`,
+        '1'
+      );
+
+      if (!pageInput) {
+        return; // 用户取消
+      }
+
+      // 解析页码
+      try {
+        pageNumbers = pageInput
+          .split(',')
+          .map(p => parseInt(p.trim()))
+          .filter(p => p > 0 && !isNaN(p));
+
+        if (pageNumbers.length === 0) {
+          toast.error('页码格式不正确，请输入有效的数字');
+          return;
+        }
+      } catch (error) {
+        toast.error('页码格式不正确');
+        return;
+      }
+    }
+
+    const confirmMsg = pageNumbers
+      ? `确定要扫描第 ${pageNumbers.join(', ')} 页吗？\n\n将执行：\n✓ PDF页面渲染（指定页码）\n✓ OCR文字识别\n✓ LLM智能分析\n\n预计需要 ${pageNumbers.length * 10} 秒`
+      : `确定要重新分析这个文件吗？\n\n将执行：\n✓ PDF页面渲染（前5页）\n✓ OCR文字识别\n✓ LLM智能分析\n\n预计需要 1分钟`;
 
     if (!confirm(confirmMsg)) {
       return;
@@ -187,7 +221,7 @@ export default function ReviewQueuePage() {
     }, 1000); // 每秒轮询一次
 
     try {
-      const result = await reanalyzePendingReview(currentItem.id);
+      const result = await reanalyzePendingReview(currentItem.id, pageNumbers);
 
       // 停止轮询
       if (progressIntervalRef.current) {

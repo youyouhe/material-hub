@@ -1,10 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Upload, CheckCircle, AlertCircle, XCircle, FileText, Image as ImageIcon, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { smartImportBatch } from '../services/api';
+import { smartImportSingle, getPendingReviewProgress, getPendingReview } from '../services/api';
 
 interface UploadResult {
-  status: 'auto_archived' | 'pending_review' | 'failed';
+  status: 'auto_archived' | 'pending_review' | 'failed' | 'processing';
   filename: string;
   confidence?: number;
   material_id?: number;
@@ -21,11 +21,33 @@ interface BatchResult {
   items: UploadResult[];
 }
 
+interface ProgressData {
+  stage: string;
+  message: string;
+  current_page: number;
+  total_pages: number;
+  ocr_results?: Array<{
+    page: number;
+    chars: number;
+    preview: string;
+    status: string;
+  }>;
+}
+
+interface FileProgress {
+  filename: string;
+  status: 'waiting' | 'processing' | 'completed' | 'failed';
+  progress?: ProgressData;
+  result?: UploadResult;
+}
+
 export default function SmartUploadPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [results, setResults] = useState<BatchResult | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [fileProgress, setFileProgress] = useState<FileProgress[]>([]);
+  const progressIntervalRef = useRef<number | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -66,18 +88,190 @@ export default function SmartUploadPage() {
     setUploading(true);
     setResults(null);
 
-    try {
-      const data: BatchResult = await smartImportBatch(files);
-      setResults(data);
+    // 初始化进度状态
+    const initialProgress: FileProgress[] = files.map(file => ({
+      filename: file.name,
+      status: 'waiting',
+    }));
+    setFileProgress(initialProgress);
 
-      if (data.auto_archived > 0) {
-        toast.success(`成功自动归档 ${data.auto_archived} 个文件`);
+    const uploadResults: UploadResult[] = [];
+    let autoArchived = 0;
+    let pendingReview = 0;
+    let failed = 0;
+
+    try {
+      // 顺序处理每个文件
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+
+        // 更新当前文件状态为处理中
+        setFileProgress(prev => {
+          const updated = [...prev];
+          updated[i] = { ...updated[i], status: 'processing' };
+          return updated;
+        });
+
+        try {
+          // 上传文件
+          const result = await smartImportSingle(file);
+
+          // 如果返回 processing 状态且有 pending_id，开始轮询进度
+          if (result.status === 'processing' && result.pending_id) {
+            const pendingId = result.pending_id;
+
+            // 清除之前的定时器
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+            }
+
+            // 轮询进度直到处理完成
+            let finalResult: UploadResult = result as UploadResult;
+            await new Promise<void>((resolve) => {
+              progressIntervalRef.current = setInterval(async () => {
+                try {
+                  const progressData = await getPendingReviewProgress(pendingId);
+
+                  if (progressData.status === 'processing' && progressData.progress) {
+                    // 更新当前文件的进度
+                    setFileProgress(prev => {
+                      const updated = [...prev];
+                      updated[i] = {
+                        ...updated[i],
+                        status: 'processing',
+                        progress: progressData.progress,
+                      };
+                      return updated;
+                    });
+                  } else {
+                    // 处理完成，停止轮询
+                    if (progressIntervalRef.current) {
+                      clearInterval(progressIntervalRef.current);
+                      progressIntervalRef.current = null;
+                    }
+
+                    // 获取最终结果
+                    try {
+                      const pendingItem = await getPendingReview(pendingId);
+
+                      // 映射后台状态到前端状态
+                      let mappedStatus: 'auto_archived' | 'pending_review' | 'failed' = 'pending_review';
+                      if (pendingItem.status === 'approved') {
+                        mappedStatus = 'auto_archived';
+                      } else if (pendingItem.status === 'pending') {
+                        mappedStatus = 'pending_review';
+                      } else if (pendingItem.status === 'rejected' || pendingItem.status === 'processing') {
+                        mappedStatus = 'failed';
+                      }
+
+                      finalResult = {
+                        status: mappedStatus,
+                        pending_id: pendingId,
+                        material_id: pendingItem.material_id,
+                        filename: pendingItem.filename,
+                        confidence: pendingItem.confidence || 0,
+                        message: mappedStatus === 'auto_archived' ? '已自动归档' : (mappedStatus === 'pending_review' ? '需要人工审核' : '处理失败'),
+                        ...(mappedStatus === 'failed' && { error: pendingItem.review_notes || '处理失败' }),
+                      } as UploadResult;
+                    } catch (err) {
+                      console.error('获取最终结果失败:', err);
+                    }
+
+                    resolve();
+                  }
+                } catch (error) {
+                  console.error('获取进度失败:', error);
+                  // 继续轮询
+                }
+              }, 1000);
+            });
+
+            // 使用最终结果
+            result.status = finalResult.status;
+            result.material_id = finalResult.material_id;
+            result.confidence = finalResult.confidence || 0;
+            result.message = finalResult.message;
+            if (finalResult.error) {
+              (result as any).error = finalResult.error;
+            }
+          }
+
+          // 类型转换 - 确保 status 符合 UploadResult 类型
+          const uploadResult: UploadResult = {
+            status: result.status as 'auto_archived' | 'pending_review' | 'failed' | 'processing',
+            filename: result.filename,
+            confidence: result.confidence,
+            material_id: result.material_id,
+            pending_id: result.pending_id,
+            message: result.message,
+            error: (result as any).error,
+          };
+
+          // 更新结果
+          uploadResults.push(uploadResult);
+
+          if (uploadResult.status === 'auto_archived') {
+            autoArchived++;
+          } else if (uploadResult.status === 'pending_review') {
+            pendingReview++;
+          } else {
+            failed++;
+          }
+
+          // 更新当前文件状态为完成
+          setFileProgress(prev => {
+            const updated = [...prev];
+            updated[i] = {
+              ...updated[i],
+              status: 'completed',
+              result: uploadResult,
+            };
+            return updated;
+          });
+
+        } catch (error) {
+          console.error(`处理文件失败: ${file.name}`, error);
+          failed++;
+
+          const errorResult: UploadResult = {
+            status: 'failed',
+            filename: file.name,
+            error: error instanceof Error ? error.message : '处理失败',
+          };
+          uploadResults.push(errorResult);
+
+          // 更新当前文件状态为失败
+          setFileProgress(prev => {
+            const updated = [...prev];
+            updated[i] = {
+              ...updated[i],
+              status: 'failed',
+              result: errorResult,
+            };
+            return updated;
+          });
+        }
       }
-      if (data.pending_review > 0) {
-        toast(`${data.pending_review} 个文件需要人工审核`, { icon: '⚠️' });
+
+      // 汇总结果
+      const batchResult: BatchResult = {
+        total: files.length,
+        auto_archived: autoArchived,
+        pending_review: pendingReview,
+        failed: failed,
+        items: uploadResults,
+      };
+
+      setResults(batchResult);
+
+      if (autoArchived > 0) {
+        toast.success(`成功自动归档 ${autoArchived} 个文件`);
       }
-      if (data.failed > 0) {
-        toast.error(`${data.failed} 个文件处理失败`);
+      if (pendingReview > 0) {
+        toast(`${pendingReview} 个文件需要人工审核`, { icon: '⚠️' });
+      }
+      if (failed > 0) {
+        toast.error(`${failed} 个文件处理失败`);
       }
 
       // 清空文件列表
@@ -88,6 +282,12 @@ export default function SmartUploadPage() {
       toast.error('批量上传失败');
     } finally {
       setUploading(false);
+
+      // 清除定时器
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
     }
   };
 
@@ -208,6 +408,118 @@ export default function SmartUploadPage() {
         </div>
       )}
 
+      {/* 实时进度 */}
+      {uploading && fileProgress.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-medium mb-4">处理进度</h3>
+
+          <div className="space-y-4">
+            {fileProgress.map((fileProg, index) => (
+              <div key={index} className="border border-gray-200 rounded-lg p-4">
+                {/* 文件名和状态 */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    {fileProg.status === 'waiting' && (
+                      <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
+                    )}
+                    {fileProg.status === 'processing' && (
+                      <Loader className="w-5 h-5 text-blue-600 animate-spin" />
+                    )}
+                    {fileProg.status === 'completed' && (
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    )}
+                    {fileProg.status === 'failed' && (
+                      <XCircle className="w-5 h-5 text-red-600" />
+                    )}
+                    <span className="font-medium text-gray-900">{fileProg.filename}</span>
+                  </div>
+                  <span className={`text-sm px-2 py-1 rounded ${
+                    fileProg.status === 'waiting' ? 'bg-gray-100 text-gray-600' :
+                    fileProg.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                    fileProg.status === 'completed' ? 'bg-green-100 text-green-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {fileProg.status === 'waiting' && '等待中'}
+                    {fileProg.status === 'processing' && '处理中'}
+                    {fileProg.status === 'completed' && '完成'}
+                    {fileProg.status === 'failed' && '失败'}
+                  </span>
+                </div>
+
+                {/* OCR 进度详情 */}
+                {fileProg.status === 'processing' && fileProg.progress && (
+                  <div className="mt-3 space-y-3">
+                    {/* 当前阶段 */}
+                    <div className="bg-blue-50 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Loader className="w-4 h-4 text-blue-600 animate-spin" />
+                        <span className="text-sm font-medium text-blue-900">
+                          {fileProg.progress.message}
+                        </span>
+                      </div>
+                      {fileProg.progress.total_pages > 0 && (
+                        <div className="text-xs text-blue-700">
+                          进度: {fileProg.progress.current_page} / {fileProg.progress.total_pages} 页
+                        </div>
+                      )}
+                    </div>
+
+                    {/* OCR 识别结果 */}
+                    {fileProg.progress.ocr_results && fileProg.progress.ocr_results.length > 0 && (
+                      <div className="max-h-64 overflow-y-auto space-y-2">
+                        <div className="text-sm font-medium text-blue-900 mb-2">
+                          OCR识别结果：
+                        </div>
+                        {fileProg.progress.ocr_results.map((result) => (
+                          <div key={result.page} className="bg-white rounded-lg p-3 border border-blue-200">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-medium text-sm text-gray-900">
+                                第 {result.page} 页
+                              </span>
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                result.status === 'success'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-red-100 text-red-700'
+                              }`}>
+                                {result.status === 'success' ? `✓ ${result.chars} 字符` : '✗ 识别失败'}
+                              </span>
+                            </div>
+                            {result.preview && (
+                              <div className="text-xs text-gray-600 font-mono whitespace-pre-wrap break-all">
+                                {result.preview}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 完成结果 */}
+                {fileProg.status === 'completed' && fileProg.result && (
+                  <div className="mt-2 text-sm text-gray-600">
+                    {fileProg.result.message}
+                    {fileProg.result.confidence !== undefined && (
+                      <span className="ml-2 text-gray-500">
+                        (置信度: {(fileProg.result.confidence * 100).toFixed(0)}%)
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* 失败信息 */}
+                {fileProg.status === 'failed' && fileProg.result?.error && (
+                  <div className="mt-2 text-sm text-red-600">
+                    {fileProg.result.error}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 处理结果 */}
       {results && (
         <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -275,7 +587,7 @@ export default function SmartUploadPage() {
                         {item.filename}
                       </div>
                       <div className="text-sm text-gray-600">
-                        {item.message || item.error || ''}
+                        {item.status === 'failed' ? (item.error || item.message) : (item.message || item.error || '')}
                       </div>
                     </div>
                   </div>

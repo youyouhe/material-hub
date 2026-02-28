@@ -7,7 +7,7 @@ import logging
 from typing import List, Optional
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, BackgroundTasks, Body
 from fastapi.responses import FileResponse
 
 from database import get_session, PendingReview
@@ -16,6 +16,98 @@ from smart_import import SmartImportPipeline
 logger = logging.getLogger("materialhub.routers.smart_import")
 
 router = APIRouter(prefix="/api/smart-import", tags=["smart-import"])
+
+
+@router.post("/single")
+async def single_import(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """
+    单文件智能导入
+
+    立即返回pending_id，后台异步处理文件并更新进度
+    客户端可以轮询 /pending-reviews/{id}/progress 查看进度
+    """
+    import json
+    import tempfile
+    import shutil
+    from pathlib import Path
+    import io
+
+    # 先保存临时文件
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        temp_path = tmp.name
+
+    # 创建待审核记录（状态为processing）
+    with get_session() as session:
+        pending_item = PendingReview(
+            filename=file.filename,
+            file_path=temp_path,
+            file_type="document" if file.filename.lower().endswith('.pdf') else "image",
+            status="processing",
+            processing_progress=json.dumps({
+                "stage": "preparing",
+                "message": "准备处理...",
+                "current_page": 0,
+                "total_pages": 0,
+                "ocr_results": []
+            }, ensure_ascii=False)
+        )
+        session.add(pending_item)
+        session.commit()
+        pending_id = pending_item.id
+
+    logger.info(f"📝 创建待审核记录 ID={pending_id}: {file.filename}")
+
+    # 同步处理函数（在后台任务中运行）
+    def process_file_sync():
+        import asyncio
+        try:
+            # 创建新的事件循环
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            # 读取文件内容
+            with open(temp_path, 'rb') as f:
+                file_content = f.read()
+
+            # 创建模拟的UploadFile对象
+            mock_file = UploadFile(
+                filename=file.filename,
+                file=io.BytesIO(file_content)
+            )
+
+            pipeline = SmartImportPipeline()
+
+            # 传递pending_id，让处理过程能更新进度
+            result = loop.run_until_complete(pipeline.process_single_file(mock_file, pending_id=pending_id))
+            logger.info(f"✅ 单文件导入完成: {result}")
+
+            loop.close()
+
+        except Exception as e:
+            logger.error(f"单文件导入失败: {e}", exc_info=True)
+
+            # 更新状态为失败
+            with get_session() as session:
+                item = session.query(PendingReview).get(pending_id)
+                if item:
+                    item.status = "pending"
+                    item.processing_progress = json.dumps({
+                        "stage": "error",
+                        "message": f"处理失败: {str(e)}"
+                    }, ensure_ascii=False)
+                    session.commit()
+
+    # 启动后台任务
+    background_tasks.add_task(process_file_sync)
+
+    # 立即返回pending_id，让前端开始轮询
+    return {
+        "status": "processing",
+        "pending_id": pending_id,
+        "filename": file.filename,
+        "message": "文件已接收，正在后台处理..."
+    }
 
 
 @router.post("/batch")
@@ -211,7 +303,7 @@ async def approve_pending_review(id: int, corrections: Optional[dict] = None):
         return {
             "status": "success",
             "message": "已批准并归档",
-            "material_id": material.id,
+            "material_id": material["id"],
             "pending_id": id
         }
 
@@ -249,10 +341,19 @@ async def reject_pending_review(id: int, reason: str = ""):
 
 
 @router.post("/pending-reviews/{id}/reanalyze")
-async def reanalyze_pending_review(id: int):
+async def reanalyze_pending_review(id: int, page_numbers: Optional[List[int]] = Body(None)):
     """
     重新分析待审核项
-    删除当前记录，重新执行智能导入流程（含OCR）
+
+    参数:
+    - page_numbers: 可选，指定要扫描的页码列表（从1开始），例如：[1, 3, 5]
+                   如果不提供，默认扫描前5页
+
+    请求体示例:
+    {
+        "page_numbers": [1, 3, 5]
+    }
+    或者不传递 page_numbers（使用默认模式）
     """
     import json
 
@@ -299,10 +400,13 @@ async def reanalyze_pending_review(id: int):
 
     # 重新执行智能导入流程（带进度更新）
     pipeline = SmartImportPipeline()
-    logger.info(f"🔄 重新分析: {original_filename}")
+    if page_numbers:
+        logger.info(f"🔄 重新分析: {original_filename}，指定页码: {page_numbers}")
+    else:
+        logger.info(f"🔄 重新分析: {original_filename}")
 
     try:
-        result = await pipeline.process_single_file(mock_file, pending_id=processing_id)
+        result = await pipeline.process_single_file(mock_file, pending_id=processing_id, page_numbers=page_numbers)
         logger.info(f"✅ 重新分析完成: {result}")
 
         # 清除processing状态，更新为最新的分析结果
