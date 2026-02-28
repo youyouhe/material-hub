@@ -388,7 +388,8 @@ class IntelligentAnalyzer:
 
         try:
             # 调用LLM
-            response = self.llm.chat(prompt)
+            messages = [{"role": "user", "content": prompt}]
+            response = self.llm.chat(messages)
 
             # 解析JSON
             analysis = json.loads(response)
