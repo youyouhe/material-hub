@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Building2, Search, RefreshCw, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getPendingReviews, getPendingReviewPreviewUrl, approvePendingReview, rejectPendingReview, reanalyzePendingReview, deletePendingReview, listCompanies } from '../services/api';
+import { getPendingReviews, getPendingReviewPreviewUrl, approvePendingReview, rejectPendingReview, reanalyzePendingReview, deletePendingReview, listCompanies, getPendingReviewProgress } from '../services/api';
 import type { CompanyInfo } from '../types';
 
 interface PendingItem {
@@ -53,18 +53,40 @@ const TYPE_LABELS: Record<string, string> = {
   unknown: '未知类型'
 };
 
+interface ProgressData {
+  stage: string;
+  message: string;
+  current_page: number;
+  total_pages: number;
+  ocr_results?: Array<{
+    page: number;
+    chars: number;
+    preview: string;
+    status: string;
+  }>;
+}
+
 export default function ReviewQueuePage() {
   const [items, setItems] = useState<PendingItem[]>([]);
   const [currentItem, setCurrentItem] = useState<PendingItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [progress, setProgress] = useState<ProgressData | null>(null);
   const [corrections, setCorrections] = useState<any>({});
   const [allCompanies, setAllCompanies] = useState<CompanyInfo[]>([]);
   const [companySearchTerm, setCompanySearchTerm] = useState('');
+  const progressIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     loadPendingItems();
     loadAllCompanies();
+
+    // 清理定时器
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
   }, []);
 
   const loadAllCompanies = async () => {
@@ -136,14 +158,42 @@ export default function ReviewQueuePage() {
     }
 
     setReanalyzing(true);
-    const toastId = toast('🔄 正在重新分析，请稍候...', {
-      icon: '⏳',
-      duration: Infinity
+    setProgress({
+      stage: 'preparing',
+      message: '准备重新分析...',
+      current_page: 0,
+      total_pages: 0,
+      ocr_results: []
     });
+
+    const itemId = currentItem.id;
+
+    // 开始轮询进度
+    progressIntervalRef.current = setInterval(async () => {
+      try {
+        const progressData = await getPendingReviewProgress(itemId);
+        if (progressData.status === 'processing' && progressData.progress) {
+          setProgress(progressData.progress);
+        } else {
+          // 处理完成，停止轮询
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
+        }
+      } catch (error) {
+        console.error('获取进度失败:', error);
+      }
+    }, 1000); // 每秒轮询一次
 
     try {
       const result = await reanalyzePendingReview(currentItem.id);
-      toast.dismiss(toastId);
+
+      // 停止轮询
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
 
       if (result.status === 'auto_archived') {
         toast.success('🎉 重新分析完成，已自动归档！');
@@ -154,11 +204,17 @@ export default function ReviewQueuePage() {
       // 重新加载待审核列表
       await loadPendingItems();
     } catch (error) {
-      toast.dismiss(toastId);
+      // 停止轮询
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+
       console.error('重新分析错误:', error);
       toast.error('❌ 重新分析失败：' + (error as Error).message);
     } finally {
       setReanalyzing(false);
+      setProgress(null);
     }
   };
 
@@ -267,24 +323,63 @@ export default function ReviewQueuePage() {
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {/* 重新分析进度提示 */}
-            {reanalyzing && (
-              <div className="p-6 bg-blue-50 border-2 border-blue-300 rounded-lg">
+            {reanalyzing && progress && (
+              <div className="p-6 bg-blue-50 border-2 border-blue-300 rounded-lg space-y-4">
                 <div className="flex items-center gap-4">
                   <RefreshCw className="w-8 h-8 text-blue-600 animate-spin flex-shrink-0" />
                   <div className="flex-1">
-                    <h4 className="text-lg font-semibold text-blue-900 mb-2">
-                      正在重新分析文件...
+                    <h4 className="text-lg font-semibold text-blue-900 mb-1">
+                      {progress.message}
                     </h4>
-                    <div className="space-y-1 text-sm text-blue-700">
-                      <p>✓ 正在渲染PDF页面为高清图片（300 DPI）</p>
-                      <p>✓ 正在使用DeepSeek-OCR-2识别文字</p>
-                      <p>✓ 正在使用LLM智能分析内容</p>
-                      <p className="mt-2 font-medium">
-                        请耐心等待，预计需要 1-3 分钟...
-                      </p>
-                    </div>
+                    {progress.stage === 'ocr' && progress.total_pages > 0 && (
+                      <div className="mt-2">
+                        <div className="flex justify-between text-sm text-blue-700 mb-1">
+                          <span>第 {progress.current_page}/{progress.total_pages} 页</span>
+                          <span>{Math.round((progress.current_page / progress.total_pages) * 100)}%</span>
+                        </div>
+                        <div className="w-full bg-blue-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${(progress.current_page / progress.total_pages) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* OCR结果预览 */}
+                {progress.ocr_results && progress.ocr_results.length > 0 && (
+                  <div className="max-h-64 overflow-y-auto space-y-2">
+                    <div className="text-sm font-medium text-blue-900 mb-2">
+                      OCR识别结果：
+                    </div>
+                    {progress.ocr_results.map((result) => (
+                      <div
+                        key={result.page}
+                        className="bg-white rounded-lg p-3 border border-blue-200"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm text-gray-900">
+                            第 {result.page} 页
+                          </span>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            result.status === 'success'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}>
+                            {result.status === 'success' ? `✓ ${result.chars} 字符` : '✗ 识别失败'}
+                          </span>
+                        </div>
+                        {result.preview && (
+                          <div className="text-xs text-gray-600 font-mono whitespace-pre-wrap break-all">
+                            {result.preview}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

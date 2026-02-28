@@ -254,6 +254,8 @@ async def reanalyze_pending_review(id: int):
     重新分析待审核项
     删除当前记录，重新执行智能导入流程（含OCR）
     """
+    import json
+
     with get_session() as session:
         item = session.query(PendingReview).get(id)
 
@@ -268,9 +270,18 @@ async def reanalyze_pending_review(id: int):
         if not os.path.exists(temp_file_path):
             raise HTTPException(status_code=404, detail="临时文件不存在")
 
-        # 删除旧的数据库记录
-        session.delete(item)
+        # 标记为处理中状态
+        item.status = "processing"
+        item.processing_progress = json.dumps({
+            "stage": "preparing",
+            "message": "准备重新分析...",
+            "current_page": 0,
+            "total_pages": 0,
+            "ocr_results": []
+        }, ensure_ascii=False)
         session.commit()
+
+        processing_id = item.id
 
     # 创建UploadFile对象模拟上传
     from fastapi import UploadFile
@@ -286,17 +297,70 @@ async def reanalyze_pending_review(id: int):
         file=io.BytesIO(file_content)
     )
 
-    # 重新执行智能导入流程
+    # 重新执行智能导入流程（带进度更新）
     pipeline = SmartImportPipeline()
     logger.info(f"🔄 重新分析: {original_filename}")
 
     try:
-        result = await pipeline.process_single_file(mock_file)
+        result = await pipeline.process_single_file(mock_file, pending_id=processing_id)
         logger.info(f"✅ 重新分析完成: {result}")
+
+        # 清除processing状态
+        with get_session() as session:
+            item = session.query(PendingReview).get(processing_id)
+            if item and item.status == "processing":
+                item.status = "pending"
+                item.processing_progress = None
+                session.commit()
+
         return result
     except Exception as e:
         logger.error(f"重新分析失败: {e}", exc_info=True)
+
+        # 清除processing状态并记录错误
+        with get_session() as session:
+            item = session.query(PendingReview).get(processing_id)
+            if item:
+                item.status = "pending"
+                item.processing_progress = json.dumps({
+                    "stage": "error",
+                    "message": f"分析失败: {str(e)}"
+                }, ensure_ascii=False)
+                session.commit()
+
         raise HTTPException(status_code=500, detail=f"重新分析失败: {str(e)}")
+
+
+@router.get("/pending-reviews/{id}/progress")
+async def get_pending_review_progress(id: int):
+    """
+    获取待审核项的处理进度
+    """
+    import json
+
+    with get_session() as session:
+        item = session.query(PendingReview).get(id)
+
+        if not item:
+            raise HTTPException(status_code=404, detail="待审核项不存在")
+
+        if item.status != "processing":
+            return {
+                "status": item.status,
+                "progress": None
+            }
+
+        progress_data = {}
+        if item.processing_progress:
+            try:
+                progress_data = json.loads(item.processing_progress)
+            except:
+                pass
+
+        return {
+            "status": "processing",
+            "progress": progress_data
+        }
 
 
 @router.delete("/pending-reviews/{id}")

@@ -322,3 +322,21 @@ export async function getSmartImportStats(): Promise<{
 }> {
   return request(`${BASE}/smart-import/stats`);
 }
+
+export async function getPendingReviewProgress(id: number): Promise<{
+  status: string;
+  progress?: {
+    stage: string;
+    message: string;
+    current_page: number;
+    total_pages: number;
+    ocr_results?: Array<{
+      page: number;
+      chars: number;
+      preview: string;
+      status: string;
+    }>;
+  };
+}> {
+  return request(`${BASE}/smart-import/pending-reviews/${id}/progress`);
+}

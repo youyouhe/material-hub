@@ -109,7 +109,7 @@ class FileProcessor:
 class ContentExtractor:
     """统一的内容提取器"""
 
-    async def extract(self, file_path: str, file_info: Dict) -> Dict:
+    async def extract(self, file_path: str, file_info: Dict, progress_callback=None) -> Dict:
         """根据文件类型提取内容"""
 
         if file_info["type"] == "image":
@@ -117,7 +117,7 @@ class ContentExtractor:
 
         elif file_info["type"] == "document":
             if file_info["extension"] == ".pdf":
-                return await self.extract_from_pdf(file_path)
+                return await self.extract_from_pdf(file_path, progress_callback=progress_callback)
             elif file_info["extension"] in [".docx", ".doc"]:
                 return await self.extract_from_docx(file_path)
 
@@ -140,7 +140,7 @@ class ContentExtractor:
             }
         }
 
-    async def extract_from_pdf(self, file_path: str) -> Dict:
+    async def extract_from_pdf(self, file_path: str, progress_callback=None) -> Dict:
         """从PDF提取文本和图片"""
         try:
             import fitz  # PyMuPDF
@@ -181,6 +181,7 @@ class ContentExtractor:
             total_pages = len(doc)
             logger.info(f"检测到扫描PDF，共{total_pages}页，将全部转为图片进行OCR...")
             ocr_texts = []
+            ocr_results = []  # 存储每页的OCR结果预览
 
             # 处理所有页面（合同等重要文档需要完整识别）
             # 如果页数过多（>20页），只处理前20页
@@ -188,6 +189,15 @@ class ContentExtractor:
 
             if total_pages > 20:
                 logger.warning(f"PDF有{total_pages}页，只处理前20页")
+
+            if progress_callback:
+                progress_callback({
+                    "stage": "ocr",
+                    "message": f"开始OCR识别，共{max_pages}页...",
+                    "current_page": 0,
+                    "total_pages": max_pages,
+                    "ocr_results": []
+                })
 
             for page_num in range(max_pages):
                 page = doc[page_num]
@@ -203,16 +213,59 @@ class ContentExtractor:
 
                 # OCR识别
                 logger.info(f"📄 OCR处理第 {page_num + 1}/{max_pages} 页...")
+
+                if progress_callback:
+                    progress_callback({
+                        "stage": "ocr",
+                        "message": f"正在识别第 {page_num + 1}/{max_pages} 页...",
+                        "current_page": page_num + 1,
+                        "total_pages": max_pages,
+                        "ocr_results": ocr_results
+                    })
+
                 ocr_text = ocr_image(str(page_img_path))
                 if ocr_text:
                     ocr_texts.append(f"=== 第{page_num + 1}页 ===\n{ocr_text}")
                     logger.info(f"   ✅ 第{page_num + 1}页识别完成，提取{len(ocr_text)}字符")
+
+                    # 保存OCR结果预览（前200字符）
+                    preview = ocr_text[:200] + ("..." if len(ocr_text) > 200 else "")
+                    ocr_results.append({
+                        "page": page_num + 1,
+                        "chars": len(ocr_text),
+                        "preview": preview,
+                        "status": "success"
+                    })
+
+                    if progress_callback:
+                        progress_callback({
+                            "stage": "ocr",
+                            "message": f"第 {page_num + 1}/{max_pages} 页识别完成（{len(ocr_text)}字符）",
+                            "current_page": page_num + 1,
+                            "total_pages": max_pages,
+                            "ocr_results": ocr_results
+                        })
                 else:
                     logger.warning(f"   ⚠️ 第{page_num + 1}页识别失败")
+                    ocr_results.append({
+                        "page": page_num + 1,
+                        "chars": 0,
+                        "preview": "",
+                        "status": "failed"
+                    })
 
             if ocr_texts:
                 full_text = "\n\n".join(ocr_texts)
                 logger.info(f"🎉 OCR完成！共处理{len(ocr_texts)}/{max_pages}页，提取文本 {len(full_text)} 字符")
+
+                if progress_callback:
+                    progress_callback({
+                        "stage": "ocr_complete",
+                        "message": f"OCR完成！共识别{len(ocr_texts)}页，提取{len(full_text)}字符",
+                        "current_page": max_pages,
+                        "total_pages": max_pages,
+                        "ocr_results": ocr_results
+                    })
             else:
                 logger.warning("❌ OCR未能提取到任何文本")
 
@@ -606,7 +659,22 @@ class SmartImportPipeline:
         self.entity_matcher = EntityMatcher()
         self.auto_archiver = AutoArchiver()
 
-    async def process_single_file(self, file: UploadFile) -> Dict:
+    def _update_progress(self, pending_id: int, progress_data: Dict):
+        """更新处理进度到数据库"""
+        if not pending_id:
+            return
+
+        import json
+        try:
+            with get_session() as session:
+                item = session.query(PendingReview).get(pending_id)
+                if item and item.status == "processing":
+                    item.processing_progress = json.dumps(progress_data, ensure_ascii=False)
+                    session.commit()
+        except Exception as e:
+            logger.warning(f"更新进度失败: {e}")
+
+    async def process_single_file(self, file: UploadFile, pending_id: Optional[int] = None) -> Dict:
         """处理单个文件的完整流程"""
 
         logger.info(f"=" * 60)
@@ -614,6 +682,13 @@ class SmartImportPipeline:
 
         try:
             # 1. 保存临时文件
+            self._update_progress(pending_id, {
+                "stage": "saving",
+                "message": "保存临时文件...",
+                "current_page": 0,
+                "total_pages": 0
+            })
+
             temp_path = TEMP_DIR / f"{uuid.uuid4()}{Path(file.filename).suffix}"
             with open(temp_path, "wb") as f:
                 content = await file.read()
@@ -622,11 +697,29 @@ class SmartImportPipeline:
             logger.info(f"💾 临时文件保存: {temp_path}")
 
             # 2. 格式识别
+            self._update_progress(pending_id, {
+                "stage": "analyzing",
+                "message": "分析文件格式...",
+                "current_page": 0,
+                "total_pages": 0
+            })
+
             file_info = self.file_processor.analyze_file(file)
             logger.info(f"📋 文件类型: {file_info['type']}, 提示: {file_info['hints']}")
 
             # 3. 内容提取
-            extracted_content = await self.content_extractor.extract(str(temp_path), file_info)
+            self._update_progress(pending_id, {
+                "stage": "extracting",
+                "message": "提取文件内容...",
+                "current_page": 0,
+                "total_pages": 0
+            })
+
+            extracted_content = await self.content_extractor.extract(
+                str(temp_path),
+                file_info,
+                progress_callback=lambda progress: self._update_progress(pending_id, progress)
+            )
             logger.info(f"📝 提取内容: {len(extracted_content['text'])} 字符, {len(extracted_content.get('images', []))} 张图片")
 
             # 4. 智能分析

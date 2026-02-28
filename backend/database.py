@@ -221,7 +221,8 @@ class PendingReview(Base):
     entities_json = Column(String)  # 实体匹配结果（JSON）
     version_info_json = Column(String)  # 版本信息（JSON）
     confidence = Column(Integer, default=0)  # 置信度 0-100
-    status = Column(String, default="pending")  # pending/approved/rejected
+    status = Column(String, default="pending")  # pending/approved/rejected/processing
+    processing_progress = Column(String)  # 处理进度JSON（仅在processing状态时使用）
     created_at = Column(DateTime, default=datetime.utcnow)
     reviewed_at = Column(DateTime, nullable=True)
     reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
