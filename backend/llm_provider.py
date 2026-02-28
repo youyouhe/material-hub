@@ -47,7 +47,9 @@ class DeepSeekProvider(LLMProvider):
         logger.info(f"Initialized DeepSeek provider: {base_url}, model={model}")
 
     def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
-        """调用DeepSeek Chat API"""
+        """调用DeepSeek Chat API（带重试机制）"""
+        import time
+
         url = f"{self.base_url}/v1/chat/completions"
 
         headers = {
@@ -62,31 +64,60 @@ class DeepSeekProvider(LLMProvider):
             "max_tokens": kwargs.get("max_tokens", 2000),
         }
 
-        try:
-            logger.debug(f"DeepSeek API request: {len(messages)} messages")
-            response = requests.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
+        max_retries = 3
+        retry_delays = [1, 2, 3]  # 重试间隔：1秒、2秒、3秒
 
-            result = response.json()
-            content = result["choices"][0]["message"]["content"]
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.info(f"DeepSeek API 重试 {attempt}/{max_retries-1}...")
+                else:
+                    logger.debug(f"DeepSeek API request: {len(messages)} messages")
 
-            logger.info(f"DeepSeek API success: {len(content)} chars")
-            return content
+                response = requests.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
 
-        except requests.exceptions.Timeout:
-            logger.error("DeepSeek API timeout")
-            raise Exception("DeepSeek API timeout")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"DeepSeek API error: {e}")
-            raise Exception(f"DeepSeek API error: {e}")
-        except (KeyError, IndexError) as e:
-            logger.error(f"DeepSeek API response parsing error: {e}")
-            raise Exception(f"Invalid DeepSeek API response: {e}")
+                result = response.json()
+                content = result["choices"][0]["message"]["content"]
+
+                if attempt > 0:
+                    logger.info(f"DeepSeek API 重试成功！")
+                logger.info(f"DeepSeek API success: {len(content)} chars")
+                return content
+
+            except requests.exceptions.Timeout as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"DeepSeek API timeout，{retry_delays[attempt]}秒后重试...")
+                    time.sleep(retry_delays[attempt])
+                    continue
+                else:
+                    logger.error("DeepSeek API timeout (已重试3次)")
+                    raise Exception("DeepSeek API timeout after 3 retries")
+
+            except requests.exceptions.ConnectionError as e:
+                # 网络连接错误（包括DNS解析失败）
+                if attempt < max_retries - 1:
+                    logger.warning(f"DeepSeek API 连接失败：{e}，{retry_delays[attempt]}秒后重试...")
+                    time.sleep(retry_delays[attempt])
+                    continue
+                else:
+                    logger.error(f"DeepSeek API 连接失败 (已重试3次): {e}")
+                    raise Exception(f"DeepSeek API connection error after 3 retries: {e}")
+
+            except requests.exceptions.RequestException as e:
+                # 其他请求异常（非网络问题，不重试）
+                logger.error(f"DeepSeek API error: {e}")
+                raise Exception(f"DeepSeek API error: {e}")
+
+            except (KeyError, IndexError) as e:
+                # 响应解析错误（不重试）
+                logger.error(f"DeepSeek API response parsing error: {e}")
+                raise Exception(f"Invalid DeepSeek API response: {e}")
 
 
 class OpenRouterProvider(LLMProvider):
@@ -108,7 +139,9 @@ class OpenRouterProvider(LLMProvider):
         logger.info(f"Initialized OpenRouter provider: model={model}")
 
     def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
-        """调用OpenRouter API"""
+        """调用OpenRouter API（带重试机制）"""
+        import time
+
         url = "https://openrouter.ai/api/v1/chat/completions"
 
         headers = {
@@ -125,31 +158,57 @@ class OpenRouterProvider(LLMProvider):
             "max_tokens": kwargs.get("max_tokens", 2000),
         }
 
-        try:
-            logger.debug(f"OpenRouter API request: {len(messages)} messages, model={payload['model']}")
-            response = requests.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
+        max_retries = 3
+        retry_delays = [1, 2, 3]
 
-            result = response.json()
-            content = result["choices"][0]["message"]["content"]
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.info(f"OpenRouter API 重试 {attempt}/{max_retries-1}...")
+                else:
+                    logger.debug(f"OpenRouter API request: {len(messages)} messages, model={payload['model']}")
 
-            logger.info(f"OpenRouter API success: {len(content)} chars")
-            return content
+                response = requests.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
 
-        except requests.exceptions.Timeout:
-            logger.error("OpenRouter API timeout")
-            raise Exception("OpenRouter API timeout")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"OpenRouter API error: {e}")
-            raise Exception(f"OpenRouter API error: {e}")
-        except (KeyError, IndexError) as e:
-            logger.error(f"OpenRouter API response parsing error: {e}")
-            raise Exception(f"Invalid OpenRouter API response: {e}")
+                result = response.json()
+                content = result["choices"][0]["message"]["content"]
+
+                if attempt > 0:
+                    logger.info(f"OpenRouter API 重试成功！")
+                logger.info(f"OpenRouter API success: {len(content)} chars")
+                return content
+
+            except requests.exceptions.Timeout as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"OpenRouter API timeout，{retry_delays[attempt]}秒后重试...")
+                    time.sleep(retry_delays[attempt])
+                    continue
+                else:
+                    logger.error("OpenRouter API timeout (已重试3次)")
+                    raise Exception("OpenRouter API timeout after 3 retries")
+
+            except requests.exceptions.ConnectionError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"OpenRouter API 连接失败：{e}，{retry_delays[attempt]}秒后重试...")
+                    time.sleep(retry_delays[attempt])
+                    continue
+                else:
+                    logger.error(f"OpenRouter API 连接失败 (已重试3次): {e}")
+                    raise Exception(f"OpenRouter API connection error after 3 retries: {e}")
+
+            except requests.exceptions.RequestException as e:
+                logger.error(f"OpenRouter API error: {e}")
+                raise Exception(f"OpenRouter API error: {e}")
+
+            except (KeyError, IndexError) as e:
+                logger.error(f"OpenRouter API response parsing error: {e}")
+                raise Exception(f"Invalid OpenRouter API response: {e}")
 
 
 class AnthropicProvider(LLMProvider):
@@ -167,7 +226,9 @@ class AnthropicProvider(LLMProvider):
         logger.info(f"Initialized Anthropic provider: model={model}")
 
     def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
-        """调用Anthropic API"""
+        """调用Anthropic API（带重试机制）"""
+        import time
+
         url = "https://api.anthropic.com/v1/messages"
 
         headers = {
@@ -195,31 +256,57 @@ class AnthropicProvider(LLMProvider):
         if system_message:
             payload["system"] = system_message
 
-        try:
-            logger.debug(f"Anthropic API request: {len(filtered_messages)} messages")
-            response = requests.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
+        max_retries = 3
+        retry_delays = [1, 2, 3]
 
-            result = response.json()
-            content = result["content"][0]["text"]
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.info(f"Anthropic API 重试 {attempt}/{max_retries-1}...")
+                else:
+                    logger.debug(f"Anthropic API request: {len(filtered_messages)} messages")
 
-            logger.info(f"Anthropic API success: {len(content)} chars")
-            return content
+                response = requests.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
 
-        except requests.exceptions.Timeout:
-            logger.error("Anthropic API timeout")
-            raise Exception("Anthropic API timeout")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Anthropic API error: {e}")
-            raise Exception(f"Anthropic API error: {e}")
-        except (KeyError, IndexError) as e:
-            logger.error(f"Anthropic API response parsing error: {e}")
-            raise Exception(f"Invalid Anthropic API response: {e}")
+                result = response.json()
+                content = result["content"][0]["text"]
+
+                if attempt > 0:
+                    logger.info(f"Anthropic API 重试成功！")
+                logger.info(f"Anthropic API success: {len(content)} chars")
+                return content
+
+            except requests.exceptions.Timeout as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Anthropic API timeout，{retry_delays[attempt]}秒后重试...")
+                    time.sleep(retry_delays[attempt])
+                    continue
+                else:
+                    logger.error("Anthropic API timeout (已重试3次)")
+                    raise Exception("Anthropic API timeout after 3 retries")
+
+            except requests.exceptions.ConnectionError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Anthropic API 连接失败：{e}，{retry_delays[attempt]}秒后重试...")
+                    time.sleep(retry_delays[attempt])
+                    continue
+                else:
+                    logger.error(f"Anthropic API 连接失败 (已重试3次): {e}")
+                    raise Exception(f"Anthropic API connection error after 3 retries: {e}")
+
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Anthropic API error: {e}")
+                raise Exception(f"Anthropic API error: {e}")
+
+            except (KeyError, IndexError) as e:
+                logger.error(f"Anthropic API response parsing error: {e}")
+                raise Exception(f"Invalid Anthropic API response: {e}")
 
 
 def get_llm_provider() -> LLMProvider:

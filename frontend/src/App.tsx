@@ -1,18 +1,20 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import toast from 'react-hot-toast';
-import { Upload, Search, Building2, Users, Home, LogOut } from 'lucide-react';
+import { Upload, Search, Building2, Users, Home, LogOut, Sparkles, ClipboardCheck } from 'lucide-react';
 import clsx from 'clsx';
 import HomePage from './pages/HomePage';
 import UploadPage from './pages/UploadPage';
 import BrowsePage from './pages/BrowsePage';
 import CompaniesPage from './pages/CompaniesPage';
 import PersonsPage from './pages/PersonsPage';
+import SmartUploadPage from './pages/SmartUploadPage';
+import ReviewQueuePage from './pages/ReviewQueuePage';
 import { LoginPage } from './components/LoginPage';
 import { isAuthenticated, setToken, clearToken } from './services/auth';
 import { checkAuth, logout as apiLogout } from './services/api';
 
-type Tab = 'home' | 'upload' | 'browse' | 'companies' | 'persons';
+type Tab = 'home' | 'upload' | 'browse' | 'companies' | 'persons' | 'smart-upload' | 'review-queue';
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('home');
@@ -151,6 +153,30 @@ export default function App() {
                 人员
               </button>
               <button
+                onClick={() => handleTabChange('smart-upload')}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
+                  tab === 'smart-upload'
+                    ? 'bg-blue-50 text-blue-700 font-medium'
+                    : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                <Sparkles className="w-4 h-4" />
+                智能导入
+              </button>
+              <button
+                onClick={() => handleTabChange('review-queue')}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
+                  tab === 'review-queue'
+                    ? 'bg-blue-50 text-blue-700 font-medium'
+                    : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                审核队列
+              </button>
+              <button
                 onClick={() => handleTabChange('upload')}
                 className={clsx(
                   'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
@@ -181,6 +207,8 @@ export default function App() {
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {tab === 'home' && <HomePage key={refreshKey} />}
+        {tab === 'smart-upload' && <SmartUploadPage />}
+        {tab === 'review-queue' && <ReviewQueuePage />}
         {tab === 'upload' && <UploadPage onExtracted={handleExtracted} />}
         {tab === 'browse' && <BrowsePage key={refreshKey} />}
         {tab === 'companies' && <CompaniesPage />}

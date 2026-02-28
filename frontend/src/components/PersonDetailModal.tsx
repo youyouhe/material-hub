@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import type { PersonInfo, MaterialInfo, CompanyInfo } from '../types';
 import {
   getPersonMaterials,
-  linkMaterialToPerson,
   unlinkMaterialFromPerson,
   updateMaterial,
   deleteMaterial,

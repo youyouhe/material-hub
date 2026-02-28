@@ -22,3 +22,9 @@ requests>=2.31.0
 
 # Authentication
 bcrypt>=4.0.0
+
+# PDF processing
+PyMuPDF>=1.23.0
+
+# Date parsing
+python-dateutil>=2.8.0

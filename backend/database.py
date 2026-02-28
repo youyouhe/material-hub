@@ -11,7 +11,7 @@ from contextlib import contextmanager
 import uuid
 
 from sqlalchemy import (
-    create_engine, Column, Integer, String, DateTime, Date, ForeignKey, event,
+    create_engine, Column, Integer, String, DateTime, Date, Boolean, ForeignKey, event,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 import bcrypt
@@ -159,6 +159,7 @@ class Material(Base):
     image_filename = Column(String, nullable=False)
     image_path = Column(String, nullable=False)
     file_size = Column(Integer, default=0)
+    file_hash = Column(String, nullable=True, index=True)  # 文件MD5 hash，用于去重
     expiry_date = Column(Date, nullable=True)
     ocr_text = Column(String, nullable=True)  # OCR识别的文本
     material_type = Column(String, nullable=True)  # 材料类型：license, id_card, certificate等
@@ -197,6 +198,7 @@ class Material(Base):
             "image_filename": self.image_filename,
             "image_url": f"/api/files/{self.image_filename}",
             "file_size": self.file_size,
+            "file_hash": self.file_hash,
             "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
             "is_expired": expired,
             "material_type": self.material_type,
@@ -206,6 +208,80 @@ class Material(Base):
             "ocr_error": self.ocr_error,
             "ocr_processed_at": self.ocr_processed_at.isoformat() if self.ocr_processed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PendingReview(Base):
+    """待审核材料导入项"""
+    __tablename__ = "pending_reviews"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    file_path = Column(String, nullable=False)  # 临时文件路径
+    filename = Column(String, nullable=False)  # 原始文件名
+    file_type = Column(String)  # image/document/other
+    file_hash = Column(String, nullable=True, index=True)  # 文件MD5 hash，用于去重
+    analysis_json = Column(String)  # LLM分析结果（JSON）
+    entities_json = Column(String)  # 实体匹配结果（JSON）
+    version_info_json = Column(String)  # 版本信息（JSON）
+    confidence = Column(Integer, default=0)  # 置信度 0-100
+    status = Column(String, default="pending")  # pending/approved/rejected/processing
+    processing_progress = Column(String)  # 处理进度JSON（仅在processing状态时使用）
+    created_at = Column(DateTime, default=datetime.utcnow)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    review_notes = Column(String, nullable=True)  # 审核备注
+
+    # 关联
+    reviewer = relationship("User")
+
+    def to_dict(self):
+        import json
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "file_type": self.file_type,
+            "confidence": self.confidence,
+            "status": self.status,
+            "analysis": json.loads(self.analysis_json) if self.analysis_json else None,
+            "entities": json.loads(self.entities_json) if self.entities_json else None,
+            "version_info": json.loads(self.version_info_json) if self.version_info_json else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
+            "reviewed_by": self.reviewed_by,
+            "review_notes": self.review_notes,
+        }
+
+
+class MaterialVersion(Base):
+    """材料版本历史记录"""
+    __tablename__ = "material_versions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
+    previous_material_id = Column(Integer, ForeignKey("materials.id"), nullable=True)
+    version_number = Column(Integer, default=1)  # 版本号
+    is_current = Column(Boolean, default=True)  # 是否当前版本
+    relation_type = Column(String)  # renewal/correction/upgrade
+    replaced_at = Column(DateTime, nullable=True)  # 替换时间
+    replaced_reason = Column(String, nullable=True)  # 替换原因
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    note = Column(String, nullable=True)
+
+    # 关联
+    material = relationship("Material", foreign_keys=[material_id])
+    previous_material = relationship("Material", foreign_keys=[previous_material_id])
+    creator = relationship("User")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "material_id": self.material_id,
+            "previous_material_id": self.previous_material_id,
+            "relation_type": self.relation_type,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "created_by": self.created_by,
+            "note": self.note,
         }
 
 
