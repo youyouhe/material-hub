@@ -305,13 +305,32 @@ async def reanalyze_pending_review(id: int):
         result = await pipeline.process_single_file(mock_file, pending_id=processing_id)
         logger.info(f"✅ 重新分析完成: {result}")
 
-        # 清除processing状态
+        # 清除processing状态，更新为最新的分析结果
         with get_session() as session:
             item = session.query(PendingReview).get(processing_id)
-            if item and item.status == "processing":
-                item.status = "pending"
-                item.processing_progress = None
-                session.commit()
+            if item:
+                # 如果process_single_file创建了新记录，需要删除它并更新当前记录
+                if result.get('status') == 'pending_review' and result.get('pending_id') != processing_id:
+                    # 删除新创建的记录
+                    new_item = session.query(PendingReview).get(result['pending_id'])
+                    if new_item:
+                        # 复制新记录的数据到当前记录
+                        item.analysis_json = new_item.analysis_json
+                        item.entities_json = new_item.entities_json
+                        item.confidence = new_item.confidence
+                        item.status = "pending"
+                        item.processing_progress = None
+
+                        # 删除新记录
+                        session.delete(new_item)
+                        session.commit()
+
+                        # 更新返回结果
+                        result['pending_id'] = processing_id
+                else:
+                    item.status = "pending"
+                    item.processing_progress = None
+                    session.commit()
 
         return result
     except Exception as e:
