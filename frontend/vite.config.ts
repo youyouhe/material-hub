@@ -15,6 +15,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8201',
         changeOrigin: true,
+        timeout: 600000,       // 10分钟超时，支持大文件上传
+        proxyTimeout: 600000,
       },
       '/health': {
         target: 'http://localhost:8201',
