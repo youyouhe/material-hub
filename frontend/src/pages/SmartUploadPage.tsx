@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef } from 'react';
-import { Upload, CheckCircle, AlertCircle, XCircle, FileText, Image as ImageIcon, Loader } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, XCircle, FileText, Image as ImageIcon, Loader, RotateCcw, RotateCw, Play } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { smartImportSingle, getPendingReviewProgress, getPendingReview } from '../services/api';
+import { smartImportSingle, smartImportManual, reanalyzePendingReview, deletePendingReview, getPendingReviewProgress, getPendingReview, rotatePendingReview, getPageThumbnailUrl } from '../services/api';
+import PdfPageSelector from '../components/PdfPageSelector';
 
 interface UploadResult {
   status: 'auto_archived' | 'pending_review' | 'failed' | 'processing';
@@ -48,6 +49,19 @@ export default function SmartUploadPage() {
   const [dragActive, setDragActive] = useState(false);
   const [fileProgress, setFileProgress] = useState<FileProgress[]>([]);
   const progressIntervalRef = useRef<number | null>(null);
+  const [importMode, setImportMode] = useState<'auto' | 'manual'>('auto');
+  const [manualState, setManualState] = useState<{
+    pendingId: number;
+    totalPages: number;
+    filename: string;
+  } | null>(null);
+  const [previewState, setPreviewState] = useState<{
+    pendingId: number;
+    totalPages: number;
+    filename: string;
+  } | null>(null);
+  const [rotating, setRotating] = useState(false);
+  const [thumbnailKey, setThumbnailKey] = useState(0); // cache buster for thumbnails after rotate
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -115,6 +129,20 @@ export default function SmartUploadPage() {
         try {
           // 上传文件
           const result = await smartImportSingle(file);
+
+          // PDF自动模式：返回 awaiting_confirmation，进入预览确认状态
+          if (result.status === 'awaiting_confirmation' && result.pending_id) {
+            setPreviewState({
+              pendingId: result.pending_id,
+              totalPages: result.total_pages || 1,
+              filename: result.filename,
+            });
+            setFiles([]);
+            setFileProgress([]);
+            setUploading(false);
+            toast.success(`已上传，共 ${result.total_pages || '?'} 页，请预览确认后开始分析`);
+            return; // 退出批量处理循环
+          }
 
           // 如果返回 processing 状态且有 pending_id，开始轮询进度
           if (result.status === 'processing' && result.pending_id) {
@@ -291,6 +319,232 @@ export default function SmartUploadPage() {
     }
   };
 
+  // 手动选页模式：上传文件
+  const handleManualUpload = async () => {
+    if (files.length === 0) {
+      toast.error('请先选择文件');
+      return;
+    }
+
+    const file = files[0];
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      toast.error('手动选页仅支持PDF文件，已切换为自动模式');
+      setImportMode('auto');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const result = await smartImportManual(file);
+      setManualState({
+        pendingId: result.pending_id,
+        totalPages: result.total_pages,
+        filename: result.filename,
+      });
+      setFiles([]);
+      toast.success(`已上传，共 ${result.total_pages} 页，请选择要分析的页面`);
+    } catch (error) {
+      console.error('上传失败:', error);
+      toast.error('上传失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // 手动选页模式：用户选好页面后提交分析
+  const handleManualSubmit = async (selectedPages: number[], extractAllPages: boolean) => {
+    if (!manualState) return;
+
+    const { pendingId, filename } = manualState;
+    setManualState(null);
+    setUploading(true);
+
+    // 初始化进度
+    setFileProgress([{ filename, status: 'processing' }]);
+
+    try {
+      // 提交分析请求（后端立即返回，后台处理）
+      await reanalyzePendingReview(pendingId, selectedPages, extractAllPages);
+    } catch (error) {
+      console.error('提交分析失败:', error);
+      toast.error('提交分析失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      setFileProgress([]);
+      setUploading(false);
+      return;
+    }
+
+    // 开始轮询进度，直到处理完成
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    progressIntervalRef.current = setInterval(async () => {
+      try {
+        const progressData = await getPendingReviewProgress(pendingId);
+        if (progressData.status === 'processing') {
+          // 还在处理中，更新进度显示
+          setFileProgress([{
+            filename,
+            status: 'processing',
+            progress: progressData.progress || undefined,
+          }]);
+        } else {
+          // 处理完成（pending/auto_archived/failed等）
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
+
+          // 根据最终状态显示结果
+          let mappedStatus: 'auto_archived' | 'pending_review' | 'failed' = 'pending_review';
+          if (progressData.status === 'auto_archived' || progressData.status === 'approved') mappedStatus = 'auto_archived';
+          else if (progressData.status === 'pending' || progressData.status === 'pending_review') mappedStatus = 'pending_review';
+          else if (progressData.status === 'failed' || progressData.status === 'awaiting_selection') mappedStatus = 'failed';
+
+          const batchResult: BatchResult = {
+            total: 1,
+            auto_archived: mappedStatus === 'auto_archived' ? 1 : 0,
+            pending_review: mappedStatus === 'pending_review' ? 1 : 0,
+            failed: mappedStatus === 'failed' ? 1 : 0,
+            items: [{
+              status: mappedStatus,
+              filename,
+              pending_id: pendingId,
+              message: mappedStatus === 'auto_archived' ? '已自动归档' :
+                       mappedStatus === 'failed' ? '分析失败' : '需要人工审核',
+            }],
+          };
+          setResults(batchResult);
+          setFileProgress([]);
+          setUploading(false);
+
+          if (mappedStatus === 'auto_archived') {
+            toast.success('分析完成，已自动归档');
+          } else if (mappedStatus === 'pending_review') {
+            toast('分析完成，需要人工审核', { icon: '⚠️' });
+          } else {
+            toast.error('分析失败');
+          }
+        }
+      } catch (error) {
+        console.error('获取进度失败:', error);
+      }
+    }, 1000);
+  };
+
+  // 手动选页模式：取消
+  const handleManualCancel = async () => {
+    if (manualState) {
+      try {
+        await deletePendingReview(manualState.pendingId);
+      } catch (error) {
+        console.error('清理失败:', error);
+      }
+    }
+    setManualState(null);
+  };
+
+  // 预览确认模式：旋转PDF
+  const handleRotate = async (direction: 'left' | 'right') => {
+    if (!previewState) return;
+    setRotating(true);
+    try {
+      await rotatePendingReview(previewState.pendingId, direction);
+      setThumbnailKey(prev => prev + 1); // 刷新缩略图
+      toast.success(`已向${direction === 'left' ? '左' : '右'}旋转90°`);
+    } catch (error) {
+      toast.error('旋转失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    } finally {
+      setRotating(false);
+    }
+  };
+
+  // 预览确认模式：确认开始分析
+  const handlePreviewConfirm = async () => {
+    if (!previewState) return;
+
+    const { pendingId, filename } = previewState;
+    setPreviewState(null);
+    setUploading(true);
+    setFileProgress([{ filename, status: 'processing' }]);
+
+    try {
+      await reanalyzePendingReview(pendingId);
+    } catch (error) {
+      console.error('提交分析失败:', error);
+      toast.error('提交分析失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      setFileProgress([]);
+      setUploading(false);
+      return;
+    }
+
+    // 轮询进度
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    progressIntervalRef.current = setInterval(async () => {
+      try {
+        const progressData = await getPendingReviewProgress(pendingId);
+        if (progressData.status === 'processing') {
+          setFileProgress([{
+            filename,
+            status: 'processing',
+            progress: progressData.progress || undefined,
+          }]);
+        } else {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
+
+          let mappedStatus: 'auto_archived' | 'pending_review' | 'failed' = 'pending_review';
+          if (progressData.status === 'auto_archived' || progressData.status === 'approved') mappedStatus = 'auto_archived';
+          else if (progressData.status === 'pending' || progressData.status === 'pending_review') mappedStatus = 'pending_review';
+          else if (progressData.status === 'failed' || progressData.status === 'awaiting_selection' || progressData.status === 'awaiting_confirmation') mappedStatus = 'failed';
+
+          const batchResult: BatchResult = {
+            total: 1,
+            auto_archived: mappedStatus === 'auto_archived' ? 1 : 0,
+            pending_review: mappedStatus === 'pending_review' ? 1 : 0,
+            failed: mappedStatus === 'failed' ? 1 : 0,
+            items: [{
+              status: mappedStatus,
+              filename,
+              pending_id: pendingId,
+              message: mappedStatus === 'auto_archived' ? '已自动归档' :
+                       mappedStatus === 'failed' ? '分析失败' : '需要人工审核',
+            }],
+          };
+          setResults(batchResult);
+          setFileProgress([]);
+          setUploading(false);
+
+          if (mappedStatus === 'auto_archived') {
+            toast.success('分析完成，已自动归档');
+          } else if (mappedStatus === 'pending_review') {
+            toast('分析完成，需要人工审核', { icon: '⚠️' });
+          } else {
+            toast.error('分析失败');
+          }
+        }
+      } catch (error) {
+        console.error('获取进度失败:', error);
+      }
+    }, 1000);
+  };
+
+  // 预览确认模式：取消
+  const handlePreviewCancel = async () => {
+    if (previewState) {
+      try {
+        await deletePendingReview(previewState.pendingId);
+      } catch (error) {
+        console.error('清理失败:', error);
+      }
+    }
+    setPreviewState(null);
+    setThumbnailKey(0);
+  };
+
   const getFileIcon = (filename: string) => {
     const ext = filename.split('.').pop()?.toLowerCase();
     if (['jpg', 'jpeg', 'png', 'bmp', 'gif', 'tiff'].includes(ext || '')) {
@@ -305,6 +559,99 @@ export default function SmartUploadPage() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
+  // 如果在预览确认状态（auto模式PDF），显示预览+旋转+确认
+  if (previewState) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">智能批量导入</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            预览确认 - 检查文件方向是否正确，如需旋转请点击旋转按钮
+          </p>
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          {/* 文件信息 */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-600" />
+              <span className="font-medium text-gray-900">{previewState.filename}</span>
+              <span className="text-sm text-gray-500">共 {previewState.totalPages} 页</span>
+            </div>
+            <button
+              onClick={handlePreviewCancel}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              取消
+            </button>
+          </div>
+
+          {/* 首页预览 */}
+          <div className="flex justify-center mb-6">
+            <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50" style={{ maxWidth: '500px' }}>
+              <img
+                src={getPageThumbnailUrl(previewState.pendingId, 1) + `&t=${thumbnailKey}`}
+                alt="首页预览"
+                className="w-full h-auto"
+              />
+            </div>
+          </div>
+
+          {/* 旋转按钮 */}
+          <div className="flex items-center justify-center gap-4 mb-6">
+            <button
+              onClick={() => handleRotate('left')}
+              disabled={rotating}
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RotateCcw className={`w-4 h-4 ${rotating ? 'animate-spin' : ''}`} />
+              向左旋转 90°
+            </button>
+            <button
+              onClick={() => handleRotate('right')}
+              disabled={rotating}
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RotateCw className={`w-4 h-4 ${rotating ? 'animate-spin' : ''}`} />
+              向右旋转 90°
+            </button>
+          </div>
+
+          {/* 开始分析按钮 */}
+          <button
+            onClick={handlePreviewConfirm}
+            disabled={rotating}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            <Play className="w-5 h-5" />
+            开始分析
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 如果在手动选页状态，显示页面选择器
+  if (manualState) {
+    return (
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">智能批量导入</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            手动选页模式 - 选择要OCR分析的关键页面
+          </p>
+        </div>
+        <PdfPageSelector
+          pendingId={manualState.pendingId}
+          totalPages={manualState.totalPages}
+          filename={manualState.filename}
+          onSubmit={handleManualSubmit}
+          onCancel={handleManualCancel}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* 标题 */}
@@ -313,6 +660,33 @@ export default function SmartUploadPage() {
         <p className="mt-2 text-sm text-gray-600">
           拖拽或选择文件，系统将自动识别、分类和归档
         </p>
+        {/* 模式切换 */}
+        <div className="flex items-center gap-2 mt-3">
+          <span className="text-sm text-gray-600">导入模式:</span>
+          <button
+            onClick={() => setImportMode('auto')}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              importMode === 'auto'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            自动分析
+          </button>
+          <button
+            onClick={() => setImportMode('manual')}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              importMode === 'manual'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            手动选页
+          </button>
+          {importMode === 'manual' && (
+            <span className="text-xs text-gray-400 ml-2">仅支持PDF，上传后可预览并选择关键页面</span>
+          )}
+        </div>
       </div>
 
       {/* 拖拽上传区 */}
@@ -389,14 +763,19 @@ export default function SmartUploadPage() {
           </div>
 
           <button
-            onClick={handleBatchUpload}
+            onClick={importMode === 'manual' ? handleManualUpload : handleBatchUpload}
             disabled={uploading}
             className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             {uploading ? (
               <>
                 <Loader className="w-5 h-5 animate-spin" />
-                处理中...
+                {importMode === 'manual' ? '上传中...' : '处理中...'}
+              </>
+            ) : importMode === 'manual' ? (
+              <>
+                <Upload className="w-5 h-5" />
+                上传并选择页面 ({files.length > 0 ? files[0].name : ''})
               </>
             ) : (
               <>

@@ -173,16 +173,51 @@ def get_pages_to_extract(material_type: str, total_pages: int, material_name: st
                 "title_suffix": "签字页"
             })
 
-    # 7. 财务票据 - 通常只有1页
+    # 7. 财务票据 - 通常只有1页（使用材料名称作为section，例如"税收完税证明"）
     elif material_type == "financial_document":
+        financial_section = material_name if material_name else "财务票据"
         pages_config.append({
             "page_num": 0,
-            "section": "财务票据",
+            "section": financial_section,
             "material_type": "financial_page",
             "title_suffix": "票据"
         })
 
-    # 8. 其他类型 - 保守策略，只提取首页
+    # 8. 交税凭证 - 通常只有1页（使用材料名称作为section，例如"税款缴纳凭证"）
+    elif material_type == "tax_payment_voucher":
+        voucher_section = material_name if material_name else "交税凭证"
+        pages_config.append({
+            "page_num": 0,
+            "section": voucher_section,
+            "material_type": "tax_voucher_page",
+            "title_suffix": "凭证"
+        })
+
+    # 9. 审计报告 - 提取封面页和审计意见页（通常是第1页和第2-3页）
+    elif material_type == "audit_report":
+        audit_section = material_name if material_name else "审计报告"
+        pages_config.append({
+            "page_num": 0,
+            "section": audit_section,
+            "material_type": "audit_cover_page",
+            "title_suffix": "封面"
+        })
+        if total_pages >= 2:
+            pages_config.append({
+                "page_num": 1,
+                "section": audit_section,
+                "material_type": "audit_opinion_page",
+                "title_suffix": "审计意见"
+            })
+        if total_pages >= 3:
+            pages_config.append({
+                "page_num": 2,
+                "section": audit_section,
+                "material_type": "audit_statement_page",
+                "title_suffix": "第3页"
+            })
+
+    # 10. 其他类型 - 保守策略，只提取首页
     elif material_type == "other":
         pages_config.append({
             "page_num": 0,

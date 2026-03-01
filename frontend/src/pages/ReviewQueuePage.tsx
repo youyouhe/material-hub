@@ -50,6 +50,9 @@ const TYPE_LABELS: Record<string, string> = {
   education_cert: '学历证书',
   legal_person_cert: '法人证明',
   contract: '合同',
+  tax_payment_cert: '完税证明',
+  tax_payment_voucher: '交税凭证',
+  audit_report: '审计报告',
   unknown: '未知类型'
 };
 
@@ -75,6 +78,7 @@ export default function ReviewQueuePage() {
   const [corrections, setCorrections] = useState<any>({});
   const [allCompanies, setAllCompanies] = useState<CompanyInfo[]>([]);
   const [companySearchTerm, setCompanySearchTerm] = useState('');
+  const [extractAllPages, setExtractAllPages] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -101,9 +105,11 @@ export default function ReviewQueuePage() {
   const loadPendingItems = async () => {
     try {
       const data = await getPendingReviews('pending', 50);
-      setItems(data.items);
-      if (data.items.length > 0) {
-        setCurrentItem(data.items[0]);
+      // 过滤掉analysis为null的项（可能是处理失败的记录）
+      const validItems = data.items.filter((item: any) => item.analysis != null);
+      setItems(validItems);
+      if (validItems.length > 0) {
+        setCurrentItem(validItems[0]);
       }
     } catch (error) {
       console.error('加载失败:', error);
@@ -117,13 +123,14 @@ export default function ReviewQueuePage() {
     if (!currentItem) return;
 
     try {
-      await approvePendingReview(currentItem.id, corrections);
+      await approvePendingReview(currentItem.id, corrections, extractAllPages);
       toast.success('已批准并归档');
       // 移除当前项，显示下一项
       const newItems = items.filter(item => item.id !== currentItem.id);
       setItems(newItems);
       setCurrentItem(newItems.length > 0 ? newItems[0] : null);
       setCorrections({});
+      setExtractAllPages(false);
     } catch (error) {
       console.error('批准错误:', error);
       toast.error('批准失败');
@@ -482,7 +489,7 @@ export default function ReviewQueuePage() {
                 材料类型
               </label>
               <select
-                value={corrections.material_type || currentItem.analysis.material_type}
+                value={corrections.material_type || currentItem.analysis?.material_type || ''}
                 onChange={(e) => setCorrections({ ...corrections, material_type: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -499,7 +506,7 @@ export default function ReviewQueuePage() {
               </label>
               <input
                 type="text"
-                value={corrections.material_name || currentItem.analysis.material_name || ''}
+                value={corrections.material_name || currentItem.analysis?.material_name || ''}
                 onChange={(e) => setCorrections({ ...corrections, material_name: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -511,8 +518,8 @@ export default function ReviewQueuePage() {
                 关联公司
               </label>
 
-              {currentItem.entities.company_match_type === 'exact_name' ||
-               currentItem.entities.company_match_type === 'exact_credit_code' ? (
+              {currentItem.entities?.company_match_type === 'exact_name' ||
+               currentItem.entities?.company_match_type === 'exact_credit_code' ? (
                 <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-md">
                   <CheckCircle className="w-5 h-5 text-green-600" />
                   <div>
@@ -520,11 +527,11 @@ export default function ReviewQueuePage() {
                       精确匹配
                     </div>
                     <div className="text-sm text-green-700">
-                      {currentItem.entities.company_name}
+                      {currentItem.entities?.company_name}
                     </div>
                   </div>
                 </div>
-              ) : currentItem.entities.company_match_type === 'fuzzy_low' ? (
+              ) : currentItem.entities?.company_match_type === 'fuzzy_low' ? (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                     <AlertTriangle className="w-5 h-5 text-yellow-600" />
@@ -533,7 +540,7 @@ export default function ReviewQueuePage() {
                     </div>
                   </div>
 
-                  {currentItem.entities.alternatives?.map((alt) => (
+                  {currentItem.entities?.alternatives?.map((alt) => (
                     <button
                       key={alt.company_id}
                       onClick={() => setCorrections({ ...corrections, company_id: alt.company_id })}
@@ -563,20 +570,20 @@ export default function ReviewQueuePage() {
                     `}
                   >
                     <div className="text-sm font-medium text-gray-900">
-                      新建公司: {currentItem.entities.company_name}
+                      新建公司: {currentItem.entities?.company_name}
                     </div>
                   </button>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {/* 显示从文件名或内容中提取的公司信息 */}
-                  {currentItem.entities.company_name && (
+                  {currentItem.entities?.company_name && (
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
                       <div className="text-sm font-medium text-blue-900 mb-1">
                         识别的公司名称
                       </div>
                       <div className="text-sm text-blue-700">
-                        {currentItem.entities.company_name}
+                        {currentItem.entities?.company_name}
                       </div>
                     </div>
                   )}
@@ -664,7 +671,7 @@ export default function ReviewQueuePage() {
                       `}
                     >
                       <div className="text-sm font-medium text-gray-900">
-                        ➕ 创建新公司{currentItem.entities.company_name ? `: ${currentItem.entities.company_name}` : ''}
+                        ➕ 创建新公司{currentItem.entities?.company_name ? `: ${currentItem.entities?.company_name}` : ''}
                       </div>
                     </button>
                   </div>
@@ -673,14 +680,14 @@ export default function ReviewQueuePage() {
             </div>
 
             {/* 有效期 */}
-            {currentItem.analysis.key_dates?.expiry_date && (
+            {currentItem.analysis?.key_dates?.expiry_date && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   有效期至
                 </label>
                 <input
                   type="date"
-                  value={corrections.expiry_date || currentItem.analysis.key_dates.expiry_date}
+                  value={corrections.expiry_date || currentItem.analysis?.key_dates?.expiry_date || ''}
                   onChange={(e) => setCorrections({ ...corrections, expiry_date: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -688,17 +695,17 @@ export default function ReviewQueuePage() {
             )}
 
             {/* 其他信息 */}
-            {currentItem.analysis.company_info && (
+            {currentItem.analysis?.company_info && (
               <div className="p-4 bg-gray-50 rounded-lg space-y-2">
                 <h4 className="text-sm font-medium text-gray-700">识别的公司信息</h4>
-                {currentItem.analysis.company_info.legal_person && (
+                {currentItem.analysis?.company_info?.legal_person && (
                   <div className="text-sm text-gray-600">
-                    法定代表人: {currentItem.analysis.company_info.legal_person}
+                    法定代表人: {currentItem.analysis?.company_info?.legal_person}
                   </div>
                 )}
-                {currentItem.analysis.company_info.credit_code && (
+                {currentItem.analysis?.company_info?.credit_code && (
                   <div className="text-sm text-gray-600">
-                    信用代码: {currentItem.analysis.company_info.credit_code}
+                    信用代码: {currentItem.analysis?.company_info?.credit_code}
                   </div>
                 )}
               </div>
@@ -706,7 +713,20 @@ export default function ReviewQueuePage() {
           </div>
 
           {/* 操作按钮 */}
-          <div className="p-4 border-t border-gray-200 bg-gray-50 space-y-2">
+          <div className="p-4 border-t border-gray-200 bg-gray-50 space-y-3">
+            {/* PDF页面提取选项 */}
+            {currentItem && currentItem.file_type === 'document' && currentItem.filename?.toLowerCase().endsWith('.pdf') && (
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900">
+                <input
+                  type="checkbox"
+                  checked={extractAllPages}
+                  onChange={(e) => setExtractAllPages(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span>提取所有页面为PNG（适用于完整归档需求）</span>
+              </label>
+            )}
+
             {/* 主要操作 */}
             <div className="flex gap-3">
               <button

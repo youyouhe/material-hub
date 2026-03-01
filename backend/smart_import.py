@@ -142,6 +142,15 @@ class FileProcessor:
             "法人": "legal_person_cert",
             "毕业证": "education_cert",
             "学历": "education_cert",
+            "完税证明": "tax_payment_cert",
+            "纳税证明": "tax_payment_cert",
+            "完税": "tax_payment_cert",
+            "交税凭证": "tax_payment_voucher",
+            "缴税凭证": "tax_payment_voucher",
+            "缴税": "tax_payment_voucher",
+            "审计报告": "audit_report",
+            "审计": "audit_report",
+            "财务报告": "audit_report",
         }
 
         for keyword, mat_type in type_keywords.items():
@@ -343,13 +352,17 @@ class ContentExtractor:
 
             if ocr_texts:
                 full_text = "\n\n".join(ocr_texts)
-                logger.info(f"🎉 OCR阶段完成！共处理{len(ocr_texts)}页（第{actual_start+1}-{actual_end}页），提取文本 {len(full_text)} 字符")
+                if page_numbers:
+                    scanned_desc = f"指定页码{page_numbers}"
+                else:
+                    scanned_desc = f"第{actual_start+1}-{actual_end}页"
+                logger.info(f"🎉 OCR阶段完成！共处理{len(ocr_texts)}页（{scanned_desc}），提取文本 {len(full_text)} 字符")
 
                 if progress_callback:
                     progress_callback({
                         "stage": "ocr_phase_complete",
-                        "message": f"OCR阶段完成！已识别第{actual_start+1}-{actual_end}页，共{len(ocr_texts)}页，提取{len(full_text)}字符",
-                        "current_page": actual_end,
+                        "message": f"OCR阶段完成！已识别{scanned_desc}，共{len(ocr_texts)}页，提取{len(full_text)}字符",
+                        "current_page": pages_to_scan_indices[-1] + 1 if pages_to_scan_indices else 0,
                         "total_pages": total_pages,
                         "ocr_results": ocr_results,
                         "scanned_pages": len(ocr_texts),
@@ -468,6 +481,10 @@ class IntelligentAnalyzer:
             analysis = await self._extract_project_performance(text, filename)
         elif material_type == "financial_document":
             analysis = await self._extract_financial_document(text, filename)
+        elif material_type == "tax_payment_voucher":
+            analysis = await self._extract_tax_payment_voucher(text, filename)
+        elif material_type == "audit_report":
+            analysis = await self._extract_audit_report(text, filename)
         else:
             # 未知类型 - 使用通用提取
             analysis = await self._extract_generic(text, filename)
@@ -513,10 +530,16 @@ class IntelligentAnalyzer:
 6. **project_performance** - 项目业绩类（项目合同、验收报告、中标通知书等）
    识别特征：项目名称、建设单位、承建单位、项目金额
 
-7. **financial_document** - 财务票据类（发票、收据、缴税证明等）
+7. **financial_document** - 财务票据类（发票、收据等）
    识别特征：发票号、税号、金额、税率
 
-8. **other** - 其他类型
+8. **tax_payment_voucher** - 交税凭证类（缴税凭证、税款缴纳凭证等）
+   识别特征：纳税人识别号、税款金额、缴款日期、税款所属期
+
+9. **audit_report** - 审计报告类（财务审计报告、专项审计报告等）
+   识别特征：审计报告、审计意见、会计师事务所、审计机构、财务报表
+
+9. **other** - 其他类型
 
 ## 输出要求
 只输出一个类型代码，不要有其他文字。例如：contract
@@ -530,7 +553,7 @@ class IntelligentAnalyzer:
             valid_types = [
                 "contract", "company_qualification", "company_business",
                 "iso_certificate", "employee_document", "project_performance",
-                "financial_document", "other"
+                "financial_document", "tax_payment_voucher", "audit_report", "other"
             ]
 
             if material_type not in valid_types:
@@ -841,7 +864,7 @@ class IntelligentAnalyzer:
         return await self._parse_llm_json(prompt)
 
     async def _extract_financial_document(self, text: str, filename: str) -> Dict:
-        """提取财务票据信息"""
+        """提取财务票据信息（发票、完税证明等）"""
 
         prompt = f"""你是财务票据信息提取专家。请提取关键信息。
 
@@ -852,9 +875,12 @@ class IntelligentAnalyzer:
 {text[:3000]}
 
 ## 提取任务
+根据内容判断是**发票**还是**完税证明**，然后提取对应字段：
+
+### 如果是发票（增值税专用发票、普通发票等）
 ```json
 {{
-    "material_name": "票据名称（如：增值税专用发票）",
+    "material_name": "增值税专用发票",
     "invoice_info": {{
         "invoice_number": "发票号码",
         "invoice_code": "发票代码",
@@ -878,8 +904,148 @@ class IntelligentAnalyzer:
 }}
 ```
 
+### 如果是完税证明（税收完税证明、纳税证明等）
+```json
+{{
+    "material_name": "税收完税证明",
+    "tax_payment_info": {{
+        "certificate_number": "完税证明号",
+        "taxpayer_name": "纳税人名称",
+        "taxpayer_id": "纳税人识别号（统一社会信用代码）",
+        "tax_type": "税种",
+        "tax_amount": "完税金额",
+        "tax_authority": "税务机关"
+    }},
+    "company_info": {{
+        "name": "纳税人名称（归档目标）"
+    }},
+    "key_dates": {{
+        "issue_date": "填发日期（YYYY-MM-DD）"
+    }},
+    "confidence": 0.95,
+    "needs_more_pages": false
+}}
+```
+
+## 识别规则
+1. **完税证明**特征：文档标题包含"完税证明"、"纳税证明"，包含纳税人识别号、税务机关
+2. **发票**特征：标题包含"发票"、"Invoice"，包含发票代码、发票号码、税率
+
 ## 归档说明
-**购买方作为归档目标**
+- **发票**：购买方作为归档目标
+- **完税证明**：纳税人作为归档目标
+
+## 重要提示
+**只输出JSON对象，不要输出任何其他文字、说明或markdown标记。直接输出纯JSON。**
+"""
+
+        return await self._parse_llm_json(prompt)
+
+    async def _extract_tax_payment_voucher(self, text: str, filename: str) -> Dict:
+        """提取交税凭证信息"""
+
+        prompt = f"""你是交税凭证信息提取专家。请提取关键信息。
+
+## 文件名
+{filename}
+
+## 内容
+{text[:3000]}
+
+## 提取任务
+提取交税凭证（缴税凭证、税款缴纳凭证）的关键信息：
+
+```json
+{{
+    "material_name": "税款缴纳凭证/交税凭证",
+    "tax_voucher_info": {{
+        "voucher_number": "凭证号码/缴款书号码",
+        "taxpayer_name": "纳税人名称",
+        "taxpayer_id": "纳税人识别号（统一社会信用代码）",
+        "tax_type": "税种（如：增值税、企业所得税等）",
+        "tax_period": "税款所属期（YYYY-MM格式）",
+        "payment_amount": "缴款金额",
+        "payment_date": "缴款日期（YYYY-MM-DD）",
+        "tax_authority": "征收机关/税务机关",
+        "bank": "缴款银行"
+    }},
+    "company_info": {{
+        "name": "纳税人名称（归档目标）"
+    }},
+    "key_dates": {{
+        "payment_date": "缴款日期（YYYY-MM-DD）",
+        "tax_period": "税款所属期（YYYY-MM）"
+    }},
+    "confidence": 0.90,
+    "needs_more_pages": false
+}}
+```
+
+## 识别特征
+- 文档标题包含："缴税凭证"、"税款缴纳凭证"、"完税凭证"、"交税"
+- 包含字段：纳税人识别号、缴款金额、缴款日期、税款所属期
+- 通常由税务机关或银行出具
+
+## 归档说明
+- 纳税人作为归档目标
+
+## 重要提示
+**只输出JSON对象，不要输出任何其他文字、说明或markdown标记。直接输出纯JSON。**
+"""
+
+        return await self._parse_llm_json(prompt)
+
+    async def _extract_audit_report(self, text: str, filename: str) -> Dict:
+        """提取审计报告信息"""
+
+        prompt = f"""你是财务审计报告信息提取专家。请提取关键信息。
+
+## 文件名
+{filename}
+
+## 内容（前3000字符）
+{text[:3000]}
+
+## 提取任务
+请提取以下关键信息，返回JSON格式：
+
+{{
+    "material_name": "审计报告标准名称（如：2024年度财务审计报告）",
+    "audit_info": {{
+        "report_number": "报告编号/报告文号",
+        "audited_company": "被审计单位名称（完整）",
+        "audited_company_credit_code": "被审计单位统一社会信用代码",
+        "audit_firm": "审计机构/会计师事务所名称",
+        "audit_opinion": "审计意见（无保留意见/保留意见/否定意见/无法表示意见）",
+        "auditor_name": "签字注册会计师姓名",
+        "report_type": "报告类型（年度审计/专项审计/离任审计等）",
+        "fiscal_year": "审计年度（YYYY）"
+    }},
+    "company_info": {{
+        "name": "被审计单位名称（归档目标）",
+        "credit_code": "统一社会信用代码"
+    }},
+    "key_dates": {{
+        "report_date": "报告日期（YYYY-MM-DD）",
+        "fiscal_period_start": "会计期间起始日（YYYY-MM-DD）",
+        "fiscal_period_end": "会计期间结束日（YYYY-MM-DD）"
+    }},
+    "confidence": 0.95,
+    "needs_more_pages": false
+}}
+
+## 识别规则
+1. **被审计单位**：通常在报告标题或第一段明确标注
+2. **审计机构**：报告末尾盖章处，通常是"XX会计师事务所（特殊普通合伙）"
+3. **审计意见**：关键词包括"我们认为"、"审计意见"、"无保留意见"等
+4. **报告日期**：审计机构盖章日期
+5. **会计期间**：如"2024年1月1日至2024年12月31日"
+
+## 归档说明
+- 审计报告归档到**被审计单位**名下
+
+## 重要提示
+**只输出JSON对象，不要输出任何其他文字、说明或markdown标记。直接输出纯JSON。**
 """
 
         return await self._parse_llm_json(prompt)
@@ -932,6 +1098,25 @@ class IntelligentAnalyzer:
             if cleaned_response.endswith("```"):
                 cleaned_response = cleaned_response[:-3]
             cleaned_response = cleaned_response.strip()
+
+            # 额外清理：如果JSON后面还有其他文字（如说明、注释），只保留JSON部分
+            # 找到第一个 { 和最后一个匹配的 }
+            first_brace = cleaned_response.find('{')
+            if first_brace != -1:
+                # 从第一个{开始，找到匹配的最后一个}
+                brace_count = 0
+                last_brace = -1
+                for i in range(first_brace, len(cleaned_response)):
+                    if cleaned_response[i] == '{':
+                        brace_count += 1
+                    elif cleaned_response[i] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            last_brace = i
+                            break
+
+                if last_brace != -1:
+                    cleaned_response = cleaned_response[first_brace:last_brace+1]
 
             # 解析JSON
             analysis = json.loads(cleaned_response)
@@ -1249,12 +1434,15 @@ class EntityMatcher:
                 analysis["company_info"]["name"] = contractor_name
 
         elif material_type == "financial_document":
-            # 财务票据 - 购买方作为归档目标
+            # 财务票据 - 购买方/纳税人作为归档目标
             invoice_info = analysis.get("invoice_info", {})
-            buyer_name = invoice_info.get("buyer")
-            buyer_tax_number = invoice_info.get("buyer_tax_number")
-            if buyer_name:
-                logger.info(f"💰 财务票据：使用购买方作为归档目标 - {buyer_name}")
+            tax_payment_info = analysis.get("tax_payment_info", {})
+
+            # 优先处理发票信息
+            if invoice_info and invoice_info.get("buyer"):
+                buyer_name = invoice_info.get("buyer")
+                buyer_tax_number = invoice_info.get("buyer_tax_number")
+                logger.info(f"💰 财务票据（发票）：使用购买方作为归档目标 - {buyer_name}")
                 company_match = await self.match_company({
                     "name": buyer_name,
                     "credit_code": buyer_tax_number
@@ -1266,6 +1454,60 @@ class EntityMatcher:
                 analysis["company_info"]["name"] = buyer_name
                 if buyer_tax_number:
                     analysis["company_info"]["credit_code"] = buyer_tax_number
+            # 处理完税证明信息
+            elif tax_payment_info and tax_payment_info.get("taxpayer_name"):
+                taxpayer_name = tax_payment_info.get("taxpayer_name")
+                taxpayer_id = tax_payment_info.get("taxpayer_id")
+                logger.info(f"💰 财务票据（完税证明）：使用纳税人作为归档目标 - {taxpayer_name}")
+                company_match = await self.match_company({
+                    "name": taxpayer_name,
+                    "credit_code": taxpayer_id
+                })
+                result.update(company_match)
+                # 同步到company_info
+                if not analysis.get("company_info"):
+                    analysis["company_info"] = {}
+                analysis["company_info"]["name"] = taxpayer_name
+                if taxpayer_id:
+                    analysis["company_info"]["credit_code"] = taxpayer_id
+
+        elif material_type == "tax_payment_voucher":
+            # 交税凭证 - 纳税人作为归档目标
+            tax_voucher_info = analysis.get("tax_voucher_info", {})
+            taxpayer_name = tax_voucher_info.get("taxpayer_name")
+            taxpayer_id = tax_voucher_info.get("taxpayer_id")
+            if taxpayer_name:
+                logger.info(f"💳 交税凭证：使用纳税人作为归档目标 - {taxpayer_name}")
+                company_match = await self.match_company({
+                    "name": taxpayer_name,
+                    "credit_code": taxpayer_id
+                })
+                result.update(company_match)
+                # 同步到company_info
+                if not analysis.get("company_info"):
+                    analysis["company_info"] = {}
+                analysis["company_info"]["name"] = taxpayer_name
+                if taxpayer_id:
+                    analysis["company_info"]["credit_code"] = taxpayer_id
+
+        elif material_type == "audit_report":
+            # 审计报告 - 被审计单位作为归档目标
+            audit_info = analysis.get("audit_info", {})
+            audited_company = audit_info.get("audited_company")
+            audited_company_credit_code = audit_info.get("audited_company_credit_code")
+            if audited_company:
+                logger.info(f"📊 审计报告：使用被审计单位作为归档目标 - {audited_company}")
+                company_match = await self.match_company({
+                    "name": audited_company,
+                    "credit_code": audited_company_credit_code
+                })
+                result.update(company_match)
+                # 同步到company_info
+                if not analysis.get("company_info"):
+                    analysis["company_info"] = {}
+                analysis["company_info"]["name"] = audited_company
+                if audited_company_credit_code:
+                    analysis["company_info"]["credit_code"] = audited_company_credit_code
 
         elif material_type in ["company_qualification", "company_business", "iso_certificate"]:
             # 公司资质/工商信息/ISO认证 - 使用company_info中的公司
@@ -1362,7 +1604,7 @@ class EntityMatcher:
                 fuzzy_matches.sort(key=lambda x: x["similarity"], reverse=True)
                 best_match = fuzzy_matches[0]
 
-                if best_match["similarity"] > 0.95:
+                if best_match["similarity"] > 0.90:
                     logger.info(f"✅ 公司高度相似匹配: {best_match['company_name']} (相似度: {best_match['similarity']:.2f})")
                     return {
                         "company_id": best_match["company_id"],
@@ -1483,11 +1725,18 @@ class SmartImportPipeline:
         except Exception as e:
             logger.warning(f"更新进度失败: {e}")
 
-    async def process_single_file(self, file: UploadFile, pending_id: Optional[int] = None, page_numbers: Optional[List[int]] = None) -> Dict:
+    async def process_single_file(
+        self,
+        file: UploadFile,
+        pending_id: Optional[int] = None,
+        page_numbers: Optional[List[int]] = None,
+        extract_all_pages: bool = False
+    ) -> Dict:
         """处理单个文件的完整流程
 
         参数:
         - page_numbers: 可选，指定要扫描的页码列表（从1开始），例如：[1, 3, 5]
+        - extract_all_pages: 可选，是否提取所有页面为PNG（默认false）
         """
 
         logger.info(f"=" * 60)
@@ -1751,86 +2000,94 @@ class SmartImportPipeline:
             if analysis.get('material_type') == 'contract' and str(temp_path).lower().endswith('.pdf') and not page_numbers:
                 logger.info("📋 检测到合同类型，开始识别关键页面...")
 
-                # 获取PDF总页数
                 import fitz
                 pdf_doc = fitz.open(str(temp_path))
                 total_pdf_pages = len(pdf_doc)
+
+                # 先尝试按页提取原生文字
+                native_text_list = []
+                for page_idx in range(total_pdf_pages):
+                    page_text = pdf_doc[page_idx].get_text().strip()
+                    if page_text:
+                        native_text_list.append({
+                            "page": page_idx + 1,
+                            "text": page_text
+                        })
                 pdf_doc.close()
 
-                # 检查是否需要扫描更多页面
-                ocr_results = extracted_content.get('ocr_results', [])
-                scanned_pages = len(ocr_results)
+                total_native_chars = sum(len(item['text']) for item in native_text_list)
 
-                if scanned_pages < total_pdf_pages:
-                    # 需要扫描剩余页面
-                    logger.info(f"📄 合同共{total_pdf_pages}页，已扫描{scanned_pages}页，继续扫描剩余页面...")
+                if total_native_chars >= 500:
+                    # 非扫描件：有足够的原生文字，直接用于关键页面分析
+                    logger.info(f"📄 非扫描件PDF，共{total_pdf_pages}页，{len(native_text_list)}页有文字，共{total_native_chars}字符")
+                    ocr_text_list = native_text_list
+                else:
+                    # 扫描件：依赖OCR文本
+                    ocr_results = extracted_content.get('ocr_results', [])
+                    scanned_pages = len(ocr_results)
 
+                    if scanned_pages < total_pdf_pages:
+                        logger.info(f"📄 合同共{total_pdf_pages}页，已扫描{scanned_pages}页，继续扫描剩余页面...")
+
+                        self._update_progress(pending_id, {
+                            "stage": "scanning_all_pages",
+                            "message": f"扫描合同全部页面（{scanned_pages+1}-{total_pdf_pages}页）...",
+                            "current_page": scanned_pages,
+                            "total_pages": total_pdf_pages
+                        })
+
+                        remaining_content = await self.content_extractor.extract(
+                            str(temp_path),
+                            file_info,
+                            progress_callback=lambda progress: self._update_progress(pending_id, progress),
+                            start_page=scanned_pages,
+                            page_limit=total_pdf_pages - scanned_pages
+                        )
+
+                        if 'ocr_results' not in extracted_content:
+                            extracted_content['ocr_results'] = []
+                        if 'ocr_results' in remaining_content:
+                            extracted_content['ocr_results'].extend(remaining_content['ocr_results'])
+
+                        logger.info(f"✅ 全部页面扫描完成，共{len(extracted_content.get('ocr_results', []))}页")
+
+                    # 从OCR缓存获取文本
+                    ocr_text_list = []
+                    logger.info(f"  📄 从缓存读取{len(extracted_content.get('ocr_results', []))}页的完整OCR文本...")
+
+                    for ocr_item in extracted_content.get('ocr_results', []):
+                        page_display = ocr_item.get("page", 0)
+                        page_num = page_display - 1
+
+                        cached_ocr = get_cached_ocr(str(temp_path), page_num)
+                        if cached_ocr:
+                            full_text = cached_ocr.get("text", "")
+                        else:
+                            full_text = ocr_item.get("preview", "")
+                            logger.warning(f"    ⚠️ 第{page_display}页缓存未命中，使用preview: {len(full_text)}字符")
+
+                        ocr_text_list.append({
+                            "page": page_display,
+                            "text": full_text
+                        })
+
+                    logger.info(f"  ✅ 已准备{len(ocr_text_list)}页文本，总字符数: {sum(len(item['text']) for item in ocr_text_list)}")
+
+                # 使用LLM分析识别关键页面
+                if ocr_text_list:
                     self._update_progress(pending_id, {
-                        "stage": "scanning_all_pages",
-                        "message": f"扫描合同全部页面（{scanned_pages+1}-{total_pdf_pages}页）...",
-                        "current_page": scanned_pages,
+                        "stage": "identifying_key_pages",
+                        "message": "智能识别关键页面（首页、金额、签字页）...",
+                        "current_page": total_pdf_pages,
                         "total_pages": total_pdf_pages
                     })
 
-                    # 扫描剩余页面
-                    remaining_content = await self.content_extractor.extract(
-                        str(temp_path),
-                        file_info,
-                        progress_callback=lambda progress: self._update_progress(pending_id, progress),
-                        start_page=scanned_pages,
-                        page_limit=total_pdf_pages - scanned_pages
-                    )
-
-                    # 合并OCR结果
-                    if 'ocr_results' not in extracted_content:
-                        extracted_content['ocr_results'] = []
-
-                    if 'ocr_results' in remaining_content:
-                        extracted_content['ocr_results'].extend(remaining_content['ocr_results'])
-
-                    logger.info(f"✅ 全部页面扫描完成，共{len(extracted_content.get('ocr_results', []))}页")
-
-                # 使用LLM分析识别关键页面
-                self._update_progress(pending_id, {
-                    "stage": "identifying_key_pages",
-                    "message": "智能识别关键页面（首页、金额、签字页）...",
-                    "current_page": total_pdf_pages,
-                    "total_pages": total_pdf_pages
-                })
-
-                # 准备OCR文本列表（从缓存获取完整文本）
-                ocr_text_list = []
-                logger.info(f"  📄 从缓存读取{len(extracted_content.get('ocr_results', []))}页的完整OCR文本...")
-
-                for ocr_item in extracted_content.get('ocr_results', []):
-                    page_display = ocr_item.get("page", 0)  # 1-based，用于显示
-                    page_num = page_display - 1  # 转换为0-based用于缓存key
-
-                    # 从缓存读取完整OCR文本
-                    cached_ocr = get_cached_ocr(str(temp_path), page_num)
-                    if cached_ocr:
-                        full_text = cached_ocr.get("text", "")
-                        logger.debug(f"    ✓ 第{page_display}页缓存命中: {len(full_text)}字符")
-                    else:
-                        # 如果缓存不存在，使用preview（降级方案）
-                        full_text = ocr_item.get("preview", "")
-                        logger.warning(f"    ⚠️ 第{page_display}页缓存未命中，使用preview: {len(full_text)}字符")
-
-                    ocr_text_list.append({
-                        "page": page_display,  # 保持1-based
-                        "text": full_text
-                    })
-
-                logger.info(f"  ✅ 已准备{len(ocr_text_list)}页文本，总字符数: {sum(len(item['text']) for item in ocr_text_list)}")
-
-                # 调用LLM分析
-                key_pages_result = await analyze_contract_key_pages(ocr_text_list, total_pdf_pages)
-
-                # 保存到analysis中，供归档时使用
-                analysis['contract_key_pages'] = key_pages_result.get('key_pages', [])
-                analysis['key_pages_summary'] = key_pages_result.get('analysis_summary', '')
-
-                logger.info(f"✅ 关键页面识别完成: {key_pages_result.get('analysis_summary', '')}")
+                    key_pages_result = await analyze_contract_key_pages(ocr_text_list, total_pdf_pages)
+                    analysis['contract_key_pages'] = key_pages_result.get('key_pages', [])
+                    analysis['key_pages_summary'] = key_pages_result.get('analysis_summary', '')
+                    logger.info(f"✅ 关键页面识别完成: {key_pages_result.get('analysis_summary', '')}")
+                else:
+                    logger.warning("⚠️ 无文本内容，跳过关键页面识别，将使用默认策略（首页+末页）")
 
             # 6. 计算总体置信度
             overall_confidence = self.calculate_confidence(analysis, entities)
@@ -1915,7 +2172,9 @@ class SmartImportPipeline:
                     filename=file.filename,
                     file_info=file_info,
                     analysis=analysis,
-                    entities=entities
+                    entities=entities,
+                    page_numbers=page_numbers,
+                    extract_all_pages=extract_all_pages
                 )
 
                 # 如果有pending_id，更新其状态
@@ -2072,10 +2331,19 @@ class AutoArchiver:
         filename: str,
         file_info: Dict,
         analysis: Dict,
-        entities: Dict
+        entities: Dict,
+        page_numbers: Optional[List[int]] = None,
+        extract_all_pages: bool = False
     ) -> Dict:
-        """执行自动归档"""
+        """执行自动归档
+
+        Args:
+            page_numbers: 用户手动选择的页码（从1开始），这些页面会全部提取为PNG
+            extract_all_pages: 是否提取所有页面为PNG（手动选页模式下批准时的选项）
+        """
         logger.info(f"🗄️ 开始自动归档: {filename}")
+        if extract_all_pages:
+            logger.info(f"  📄 用户选择：提取所有页面为PNG")
 
         # 计算文件hash
         file_hash = get_file_hash(temp_path)
@@ -2093,19 +2361,24 @@ class AutoArchiver:
             # 4. 创建Document记录（如果需要）
             document = self._get_or_create_document(session, filename, company_id)
 
-            # 5. 创建Material记录
-            material = self._create_material(
-                session,
-                document_id=document.id,
-                company_id=company_id,
-                person_id=person_id,
-                saved_file_path=saved_file_path,
-                filename=filename,
-                analysis=analysis,
-                file_hash=file_hash
-            )
+            # 5. 创建Material记录（如果提取所有页面为PNG，则跳过创建PDF主记录）
+            material = None
+            if not extract_all_pages:
+                # 正常模式：创建主Material记录指向PDF
+                material = self._create_material(
+                    session,
+                    document_id=document.id,
+                    company_id=company_id,
+                    person_id=person_id,
+                    saved_file_path=saved_file_path,
+                    filename=filename,
+                    analysis=analysis,
+                    file_hash=file_hash
+                )
 
             # 6. 智能提取关键页面PNG（根据材料类型）
+            first_page_png = None  # 记录第一张PNG，用于返回主material ID
+
             if saved_file_path.lower().endswith(".pdf"):
                 material_type = analysis.get("material_type", "other")
                 material_name = analysis.get("material_name")
@@ -2118,10 +2391,34 @@ class AutoArchiver:
 
                     pages_to_extract = []
 
-                    # 对于合同，优先使用LLM识别的关键页面
-                    if material_type == "contract" and "contract_key_pages" in analysis:
+                    if extract_all_pages:
+                        # 提取所有页面为PNG（用户勾选了"提取所有页面"选项）
+                        section_name = material_name if material_name else filename
+                        logger.info(f"  📄 提取所有页面模式: 共 {total_pages} 页")
+                        for pn in range(1, total_pages + 1):
+                            pages_to_extract.append({
+                                "page_num": pn - 1,  # 转为0-based
+                                "section": section_name,
+                                "material_type": f"page_{pn}",
+                                "title_suffix": f"第{pn}页"
+                            })
+                    elif page_numbers:
+                        # 手动选页模式：只提取用户选的页面为PNG
+                        section_name = material_name if material_name else filename
+                        for pn in sorted(page_numbers):
+                            if 1 <= pn <= total_pages:
+                                pages_to_extract.append({
+                                    "page_num": pn - 1,  # 转为0-based
+                                    "section": section_name,
+                                    "material_type": f"contract_page_{pn}",
+                                    "title_suffix": f"第{pn}页"
+                                })
+                        logger.info(f"  📄 手动选页模式: 提取用户选择的 {len(pages_to_extract)} 页")
+
+                    elif material_type == "contract" and analysis.get("contract_key_pages"):
+                        # LLM识别的合同关键页面（非空时才使用）
                         logger.info(f"  📄 使用LLM识别的合同关键页面...")
-                        key_pages = analysis.get("contract_key_pages", [])
+                        key_pages = analysis["contract_key_pages"]
 
                         for key_page in key_pages:
                             pages_to_extract.append({
@@ -2134,13 +2431,13 @@ class AutoArchiver:
                         logger.info(f"  📋 LLM识别: {analysis.get('key_pages_summary', '')}")
 
                     else:
-                        # 其他材料类型，使用默认策略
+                        # 其他材料类型或LLM未识别关键页面，使用默认策略
                         pages_to_extract = get_pages_to_extract(material_type, total_pages, material_name)
 
                     if pages_to_extract:
                         logger.info(f"  📄 {material_type} - 开始提取关键页面 ({len(pages_to_extract)}页)...")
 
-                        for page_config in pages_to_extract:
+                        for i, page_config in enumerate(pages_to_extract):
                             page_png = extract_pdf_page_to_png(
                                 saved_file_path,
                                 page_num=page_config["page_num"],
@@ -2149,21 +2446,57 @@ class AutoArchiver:
                             )
 
                             if page_png:
-                                page_material = Material(
-                                    document_id=document.id,
-                                    company_id=company_id,
-                                    person_id=person_id,
-                                    title=f"{analysis.get('material_name', filename)} - {page_config['title_suffix']}",
-                                    section=page_config["section"],
-                                    image_filename=Path(page_png).name,
-                                    image_path=page_png,
-                                    file_size=Path(page_png).stat().st_size,
-                                    material_type=page_config["material_type"],
-                                    ocr_status="completed",
-                                    ocr_processed_at=datetime.utcnow()
-                                )
-                                session.add(page_material)
-                                logger.info(f"  ✓ 创建{page_config['section']}: {page_material.title}")
+                                # 提取所有页面模式或手动选页模式：所有PNG都创建为独立记录
+                                if extract_all_pages or page_numbers:
+                                    page_material = Material(
+                                        document_id=document.id,
+                                        company_id=company_id,
+                                        person_id=person_id,
+                                        title=f"{analysis.get('material_name', filename)} - {page_config['title_suffix']}",
+                                        section=page_config["section"],
+                                        image_filename=Path(page_png).name,
+                                        image_path=page_png,
+                                        file_size=Path(page_png).stat().st_size,
+                                        material_type=page_config["material_type"],
+                                        ocr_status="completed",
+                                        ocr_processed_at=datetime.utcnow()
+                                    )
+                                    session.add(page_material)
+                                    session.flush()  # 获取ID
+
+                                    # 记录第一个PNG作为主记录（用于返回material_id）
+                                    if i == 0:
+                                        material = page_material
+                                        if extract_all_pages:
+                                            logger.info(f"  📄 提取所有页面模式：只创建PNG，不保留PDF记录")
+
+                                    logger.info(f"  ✓ 创建{page_config['section']}: {page_material.title}")
+
+                                elif i == 0 and material:
+                                    # 自动模式：第一张PNG更新主material记录
+                                    material.title = f"{analysis.get('material_name', filename)} - {page_config['title_suffix']}"
+                                    material.image_filename = Path(page_png).name
+                                    material.image_path = page_png
+                                    material.file_size = Path(page_png).stat().st_size
+                                    material.material_type = page_config["material_type"]
+                                    logger.info(f"  ✓ 主记录更新为: {material.title}")
+                                else:
+                                    # 后续PNG：创建新的material记录
+                                    page_material = Material(
+                                        document_id=document.id,
+                                        company_id=company_id,
+                                        person_id=person_id,
+                                        title=f"{analysis.get('material_name', filename)} - {page_config['title_suffix']}",
+                                        section=page_config["section"],
+                                        image_filename=Path(page_png).name,
+                                        image_path=page_png,
+                                        file_size=Path(page_png).stat().st_size,
+                                        material_type=page_config["material_type"],
+                                        ocr_status="completed",
+                                        ocr_processed_at=datetime.utcnow()
+                                    )
+                                    session.add(page_material)
+                                    logger.info(f"  ✓ 创建{page_config['section']}: {page_material.title}")
 
                 except Exception as e:
                     logger.warning(f"  ⚠️ 提取页面失败: {e}")
@@ -2334,7 +2667,8 @@ class AutoArchiver:
         saved_file_path: str,
         filename: str,
         analysis: Dict,
-        file_hash: str = None
+        file_hash: str = None,
+        override_section: str = None
     ) -> Material:
         """创建Material记录"""
         # 解析有效期
@@ -2348,8 +2682,15 @@ class AutoArchiver:
             except:
                 pass
 
-        # 确定section
-        section = self._determine_section(analysis.get("material_type"))
+        # 确定section：优先使用override_section，否则合同类型用材料名称（完整合同名），其他类型用通用分类
+        if override_section:
+            section = override_section
+        else:
+            material_type = analysis.get("material_type")
+            if material_type == "contract" and analysis.get("material_name"):
+                section = analysis["material_name"]
+            else:
+                section = self._determine_section(material_type)
 
         # 如果没有传入file_hash，计算它
         if not file_hash:
@@ -2393,5 +2734,8 @@ class AutoArchiver:
             "education_cert": "学历证书",
             "legal_person_cert": "法人证明",
             "contract": "合同",
+            "tax_payment_cert": "完税证明",
+            "tax_payment_voucher": "交税凭证",
+            "audit_report": "审计报告",
         }
         return type_to_section.get(material_type, "其他材料")
