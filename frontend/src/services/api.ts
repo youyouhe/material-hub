@@ -271,15 +271,19 @@ export function getPendingReviewPreviewUrl(id: number): string {
   return `${BASE}/smart-import/pending-reviews/${id}/preview?token=${token}`;
 }
 
-export async function approvePendingReview(id: number, corrections?: any): Promise<{
+export async function approvePendingReview(id: number, corrections?: any, extractAllPages?: boolean): Promise<{
   status: string;
   message: string;
   material_id?: number;
 }> {
+  const payload = {
+    ...(corrections || {}),
+    extract_all_pages: extractAllPages || false
+  };
   return request(`${BASE}/smart-import/pending-reviews/${id}/approve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(corrections || {}),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -294,7 +298,7 @@ export async function rejectPendingReview(id: number, reason: string = ''): Prom
   });
 }
 
-export async function reanalyzePendingReview(id: number, pageNumbers?: number[]): Promise<{
+export async function reanalyzePendingReview(id: number, pageNumbers?: number[], extractAllPages?: boolean): Promise<{
   status: string;
   message?: string;
   pending_id?: number;
@@ -303,6 +307,9 @@ export async function reanalyzePendingReview(id: number, pageNumbers?: number[])
   const body: any = {};
   if (pageNumbers && pageNumbers.length > 0) {
     body.page_numbers = pageNumbers;
+  }
+  if (extractAllPages !== undefined) {
+    body.extract_all_pages = extractAllPages;
   }
 
   return request(`${BASE}/smart-import/pending-reviews/${id}/reanalyze`, {
@@ -352,8 +359,9 @@ export async function smartImportSingle(file: File): Promise<{
   status: string;
   pending_id?: number;
   material_id?: number;
+  total_pages?: number;
   filename: string;
-  confidence: number;
+  confidence?: number;
   message?: string;
 }> {
   const formData = new FormData();
@@ -363,4 +371,39 @@ export async function smartImportSingle(file: File): Promise<{
     method: 'POST',
     body: formData,
   });
+}
+
+// 手动选页模式上传
+export async function smartImportManual(file: File): Promise<{
+  status: string;
+  pending_id: number;
+  total_pages: number;
+  filename: string;
+  message: string;
+}> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return request(`${BASE}/smart-import/single?mode=manual`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+// 旋转待审核PDF
+export async function rotatePendingReview(id: number, direction: 'left' | 'right'): Promise<{
+  status: string;
+  total_pages: number;
+  direction: string;
+  message: string;
+}> {
+  return request(`${BASE}/smart-import/pending-reviews/${id}/rotate?direction=${direction}`, {
+    method: 'POST',
+  });
+}
+
+// 获取PDF页面缩略图URL
+export function getPageThumbnailUrl(pendingId: number, pageNum: number): string {
+  const token = getToken();
+  return `${BASE}/smart-import/pending-reviews/${pendingId}/thumbnails/${pageNum}?token=${token}`;
 }

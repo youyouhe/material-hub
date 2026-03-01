@@ -72,31 +72,34 @@ else
     echo -e "${YELLOW}⚠${NC} 未找到Frontend PID文件"
 fi
 
-# 额外清理：杀死可能残留的进程
+# 额外清理：按端口杀死残留进程（最可靠）
 echo ""
 echo -e "${BLUE}清理残留进程...${NC}"
 
-# 清理Backend进程
-BACKEND_PIDS=$(ps aux | grep "[p]ython main.py" | grep "$PROJECT_ROOT/backend" | awk '{print $2}')
-if [ ! -z "$BACKEND_PIDS" ]; then
-    echo -e "${YELLOW}→${NC} 发现残留Backend进程: $BACKEND_PIDS"
-    echo $BACKEND_PIDS | xargs kill -9 2>/dev/null || true
+# 清理占用Backend端口(8201)的进程
+BACKEND_PORT_PID=$(lsof -ti :8201 2>/dev/null || true)
+if [ ! -z "$BACKEND_PORT_PID" ]; then
+    echo -e "${YELLOW}→${NC} 发现占用端口8201的进程: $BACKEND_PORT_PID"
+    echo $BACKEND_PORT_PID | xargs kill 2>/dev/null || true
+    sleep 1
+    # 如果还活着，强杀
+    BACKEND_PORT_PID=$(lsof -ti :8201 2>/dev/null || true)
+    if [ ! -z "$BACKEND_PORT_PID" ]; then
+        echo $BACKEND_PORT_PID | xargs kill -9 2>/dev/null || true
+    fi
     echo -e "${GREEN}✓${NC} 已清理"
 fi
 
-# 清理Frontend进程
-FRONTEND_PIDS=$(ps aux | grep "[n]pm run dev" | grep "$PROJECT_ROOT/frontend" | awk '{print $2}')
-if [ ! -z "$FRONTEND_PIDS" ]; then
-    echo -e "${YELLOW}→${NC} 发现残留Frontend进程: $FRONTEND_PIDS"
-    echo $FRONTEND_PIDS | xargs kill -9 2>/dev/null || true
-    echo -e "${GREEN}✓${NC} 已清理"
-fi
-
-# 清理Vite进程
-VITE_PIDS=$(pgrep -f "vite" 2>/dev/null || true)
-if [ ! -z "$VITE_PIDS" ]; then
-    echo -e "${YELLOW}→${NC} 发现Vite进程: $VITE_PIDS"
-    echo $VITE_PIDS | xargs kill -9 2>/dev/null || true
+# 清理占用Frontend端口(3100)的进程
+FRONTEND_PORT_PID=$(lsof -ti :3100 2>/dev/null || true)
+if [ ! -z "$FRONTEND_PORT_PID" ]; then
+    echo -e "${YELLOW}→${NC} 发现占用端口3100的进程: $FRONTEND_PORT_PID"
+    echo $FRONTEND_PORT_PID | xargs kill 2>/dev/null || true
+    sleep 1
+    FRONTEND_PORT_PID=$(lsof -ti :3100 2>/dev/null || true)
+    if [ ! -z "$FRONTEND_PORT_PID" ]; then
+        echo $FRONTEND_PORT_PID | xargs kill -9 2>/dev/null || true
+    fi
     echo -e "${GREEN}✓${NC} 已清理"
 fi
 

@@ -45,7 +45,7 @@ fi
 # 启动backend (设置OCR服务地址为localhost)
 # 使用 setsid 确保进程完全脱离终端会话
 export OCR_SERVICE_URL=http://localhost:8010
-setsid python main.py > "$PROJECT_ROOT/backend.log" 2>&1 &
+setsid python -u main.py > "$PROJECT_ROOT/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > "$BACKEND_PID_FILE"
 echo -e "${GREEN}✓${NC} Backend已启动 (PID: $BACKEND_PID)"

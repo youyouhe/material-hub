@@ -26,6 +26,9 @@ const TYPE_LABELS: Record<string, string> = {
   'qualification': '资质证书',
   'iso_cert': 'ISO认证',
   'certificate': '证书',
+  'tax_payment_cert': '完税证明',
+  'tax_payment_voucher': '交税凭证',
+  'audit_report': '审计报告',
   'other': '其他材料'
 };
 
