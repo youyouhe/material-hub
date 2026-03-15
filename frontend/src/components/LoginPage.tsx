@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { login } from '../services/api';
 
 interface LoginPageProps {
-  onLogin: (token: string) => void;
+  onLogin: (token: string, user?: { id: number; username: string; role: string }) => void;
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
@@ -18,7 +18,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
     try {
       const response = await login(username, password);
-      onLogin(response.token);
+      onLogin(response.token, response.user as { id: number; username: string; role: string });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -27,19 +27,20 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h1 className="text-center text-3xl font-bold text-gray-900">MaterialHub</h1>
-        <h2 className="mt-6 text-center text-2xl font-medium text-gray-700">
+    <div className="min-h-screen bg-cp-bg flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <h1 className="text-4xl font-orbitron font-bold text-cp-purple glow-purple">MaterialHub</h1>
+        <div className="neon-divider-purple w-48 mx-auto mt-4"></div>
+        <h2 className="mt-6 text-xl font-exo text-cp-muted">
           登录到您的账户
         </h2>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+        <div className="cp-card rounded-lg py-8 px-4 sm:px-10">
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="username" className="block text-sm font-medium text-cp-muted">
                 用户名
               </label>
               <div className="mt-1">
@@ -51,14 +52,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  className="cp-input block w-full px-3 py-2 rounded-md text-sm"
                   disabled={loading}
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-medium text-cp-muted">
                 密码
               </label>
               <div className="mt-1">
@@ -70,19 +71,15 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  className="cp-input block w-full px-3 py-2 rounded-md text-sm"
                   disabled={loading}
                 />
               </div>
             </div>
 
             {error && (
-              <div className="rounded-md bg-red-50 p-4">
-                <div className="flex">
-                  <div className="ml-3">
-                    <h3 className="text-sm font-medium text-red-800">{error}</h3>
-                  </div>
-                </div>
+              <div className="rounded-md bg-cp-rose/10 border border-cp-rose/30 p-4">
+                <p className="text-sm font-medium text-cp-rose">{error}</p>
               </div>
             )}
 
@@ -90,7 +87,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                className="cp-btn-primary w-full flex justify-center py-2.5 px-4 rounded-md"
               >
                 {loading ? '登录中...' : '登录'}
               </button>

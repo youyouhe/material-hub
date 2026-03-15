@@ -1,28 +1,56 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Toaster } from 'react-hot-toast';
 import toast from 'react-hot-toast';
-import { Upload, Search, Building2, Users, Home, LogOut, Sparkles, ClipboardCheck } from 'lucide-react';
-import clsx from 'clsx';
-import HomePage from './pages/HomePage';
-import UploadPage from './pages/UploadPage';
-import BrowsePage from './pages/BrowsePage';
-import CompaniesPage from './pages/CompaniesPage';
-import PersonsPage from './pages/PersonsPage';
-import SmartUploadPage from './pages/SmartUploadPage';
-import ReviewQueuePage from './pages/ReviewQueuePage';
+import Sidebar from './components/Sidebar';
+import type { Page } from './components/Sidebar';
+import DocumentsPage from './pages/DocumentsPage';
+import SearchPage from './pages/SearchPage';
+import UploadPageV2 from './pages/UploadPageV2';
+import BidsPage from './pages/BidsPage';
+import BidDetailPage from './pages/BidDetailPage';
+import ExpiryPage from './pages/ExpiryPage';
+import ChatPage from './pages/ChatPage';
+import { loadChatHistory, saveChatHistory, type ChatMessage } from './services/api-v2';
+import AdminUsersPage from './pages/AdminUsersPage';
+import AdminAuditPage from './pages/AdminAuditPage';
+import AdminSettingsPage from './pages/AdminSettingsPage';
+import AdminAgentsPage from './pages/AdminAgentsPage';
+import AdminDocTypesPage from './pages/AdminDocTypesPage';
 import { LoginPage } from './components/LoginPage';
-import { isAuthenticated, setToken, clearToken } from './services/auth';
+import { isAuthenticated, setToken, clearToken, setUser, getUser } from './services/auth';
 import { checkAuth, logout as apiLogout } from './services/api';
 
-type Tab = 'home' | 'upload' | 'browse' | 'companies' | 'persons' | 'smart-upload' | 'review-queue';
-
 export default function App() {
-  const [tab, setTab] = useState<Tab>('home');
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [page, setPage] = useState<Page>('documents');
   const [isLoggedIn, setIsLoggedIn] = useState(isAuthenticated());
   const [isValidating, setIsValidating] = useState(true);
+  const [userRole, setUserRole] = useState<string>(getUser()?.role || 'editor');
+  const [activeFolderId, setActiveFolderId] = useState<number | null>(null);
+  const [activeFolderName, setActiveFolderName] = useState<string>('');
+  const [selectedBidId, setSelectedBidId] = useState<number | null>(null);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatHistoryLoaded, setChatHistoryLoaded] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Validate token on mount
+  // Load chat history from backend on login
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    loadChatHistory()
+      .then((msgs) => { setChatMessages(msgs); setChatHistoryLoaded(true); })
+      .catch(() => setChatHistoryLoaded(true));
+  }, [isLoggedIn]);
+
+  // Debounced save to backend when messages change
+  const handleChatMessagesChange = useCallback((msgs: ChatMessage[]) => {
+    setChatMessages(msgs);
+    if (!chatHistoryLoaded) return;
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveChatHistory(msgs).catch(() => {});
+    }, 1000);
+  }, [chatHistoryLoaded]);
+
   useEffect(() => {
     const validateToken = async () => {
       if (isAuthenticated()) {
@@ -34,25 +62,34 @@ export default function App() {
       }
       setIsValidating(false);
     };
-
     validateToken();
   }, []);
 
-  const handleTabChange = useCallback((newTab: Tab) => {
-    setTab(newTab);
-    // 切换到这些页面时刷新数据
-    if (newTab === 'home' || newTab === 'browse') {
-      setRefreshKey((k) => k + 1);
-    }
+  const handleNavigate = useCallback((newPage: Page) => {
+    setPage(newPage);
   }, []);
 
-  const handleExtracted = useCallback(() => {
-    setRefreshKey((k) => k + 1);
-    handleTabChange('home'); // 上传完成后跳转到首页查看结构化信息
-  }, [handleTabChange]);
+  const handleSelectFolder = useCallback((folderId: number | null, folderName?: string) => {
+    setActiveFolderId(folderId);
+    setActiveFolderName(folderName || '');
+  }, []);
 
-  const handleLogin = useCallback((token: string) => {
+  const handleOpenBid = useCallback((bidId: number) => {
+    setSelectedBidId(bidId);
+    setPage('bid-detail');
+  }, []);
+
+  const handleOpenDocument = useCallback((docId: number) => {
+    setSelectedDocumentId(docId);
+    setPage('documents');
+  }, []);
+
+  const handleLogin = useCallback((token: string, user?: { id: number; username: string; role: string }) => {
     setToken(token);
+    if (user) {
+      setUser(user);
+      setUserRole(user.role);
+    }
     setIsLoggedIn(true);
     toast.success('登录成功');
   }, []);
@@ -61,7 +98,6 @@ export default function App() {
     try {
       await apiLogout();
     } catch (error) {
-      // Ignore logout API errors, just clear local state
       console.error('Logout error:', error);
     } finally {
       clearToken();
@@ -70,19 +106,17 @@ export default function App() {
     }
   }, []);
 
-  // Show loading state while validating token
   if (isValidating) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-cp-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">加载中...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cp-purple mx-auto"></div>
+          <p className="mt-4 text-cp-muted">加载中...</p>
         </div>
       </div>
     );
   }
 
-  // Show login page if not authenticated
   if (!isLoggedIn) {
     return (
       <>
@@ -92,127 +126,72 @@ export default function App() {
     );
   }
 
-  // Show main app if authenticated
+  function renderPage() {
+    switch (page) {
+      case 'documents':
+        return (
+          <DocumentsPage
+            folderId={activeFolderId}
+            selectedDocumentId={selectedDocumentId}
+            onSelectDocument={handleOpenDocument}
+            userRole={userRole}
+          />
+        );
+      case 'search':
+        return <SearchPage onSelectDocument={handleOpenDocument} userRole={userRole} />;
+      case 'upload':
+        return <UploadPageV2 userRole={userRole} />;
+      case 'bids':
+        return <BidsPage onOpenBid={handleOpenBid} />;
+      case 'bid-detail':
+        return selectedBidId ? (
+          <BidDetailPage
+            bidId={selectedBidId}
+            userRole={userRole}
+            onBack={() => setPage('bids')}
+          />
+        ) : (
+          <BidsPage onOpenBid={handleOpenBid} />
+        );
+      case 'expiry':
+        return <ExpiryPage onSelectDocument={handleOpenDocument} />;
+      case 'chat':
+        return <ChatPage folderId={activeFolderId} folderName={activeFolderName} messages={chatMessages} onMessagesChange={handleChatMessagesChange} />;
+      case 'admin-users':
+        return <AdminUsersPage />;
+      case 'admin-audit':
+        return <AdminAuditPage />;
+      case 'admin-settings':
+        return <AdminSettingsPage />;
+      case 'admin-agents':
+        return <AdminAgentsPage />;
+      case 'admin-doc-types':
+        return <AdminDocTypesPage />;
+      default:
+        return <DocumentsPage folderId={null} selectedDocumentId={null} onSelectDocument={handleOpenDocument} userRole={userRole} />;
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Toaster position="top-right" />
-
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-14">
-            <h1 className="text-lg font-semibold text-gray-900">MaterialHub</h1>
-
-            <nav className="flex gap-1 items-center">
-              <button
-                onClick={() => handleTabChange('home')}
-                className={clsx(
-                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
-                  tab === 'home'
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
-                )}
-              >
-                <Home className="w-4 h-4" />
-                首页
-              </button>
-              <button
-                onClick={() => handleTabChange('browse')}
-                className={clsx(
-                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
-                  tab === 'browse'
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
-                )}
-              >
-                <Search className="w-4 h-4" />
-                素材
-              </button>
-              <button
-                onClick={() => handleTabChange('companies')}
-                className={clsx(
-                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
-                  tab === 'companies'
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
-                )}
-              >
-                <Building2 className="w-4 h-4" />
-                公司
-              </button>
-              <button
-                onClick={() => handleTabChange('persons')}
-                className={clsx(
-                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
-                  tab === 'persons'
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
-                )}
-              >
-                <Users className="w-4 h-4" />
-                人员
-              </button>
-              <button
-                onClick={() => handleTabChange('smart-upload')}
-                className={clsx(
-                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
-                  tab === 'smart-upload'
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
-                )}
-              >
-                <Sparkles className="w-4 h-4" />
-                智能导入
-              </button>
-              <button
-                onClick={() => handleTabChange('review-queue')}
-                className={clsx(
-                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
-                  tab === 'review-queue'
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
-                )}
-              >
-                <ClipboardCheck className="w-4 h-4" />
-                审核队列
-              </button>
-              <button
-                onClick={() => handleTabChange('upload')}
-                className={clsx(
-                  'flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors',
-                  tab === 'upload'
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100'
-                )}
-              >
-                <Upload className="w-4 h-4" />
-                上传
-              </button>
-
-              <div className="w-px h-6 bg-gray-300 mx-2" />
-
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
-                title="退出登录"
-              >
-                <LogOut className="w-4 h-4" />
-                退出
-              </button>
-            </nav>
-          </div>
+    <div className="flex h-screen bg-cp-bg">
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          style: { background: '#12122A', color: '#E2E8F0', border: '1px solid rgba(124, 58, 237, 0.25)' },
+        }}
+      />
+      <Sidebar
+        currentPage={page}
+        onNavigate={handleNavigate}
+        userRole={userRole}
+        activeFolderId={activeFolderId}
+        onSelectFolder={handleSelectFolder}
+        onLogout={handleLogout}
+      />
+      <main className="flex-1 overflow-y-auto bg-cp-bg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+          {renderPage()}
         </div>
-      </header>
-
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {tab === 'home' && <HomePage key={refreshKey} />}
-        {tab === 'smart-upload' && <SmartUploadPage />}
-        {tab === 'review-queue' && <ReviewQueuePage />}
-        {tab === 'upload' && <UploadPage onExtracted={handleExtracted} />}
-        {tab === 'browse' && <BrowsePage key={refreshKey} />}
-        {tab === 'companies' && <CompaniesPage />}
-        {tab === 'persons' && <PersonsPage />}
       </main>
     </div>
   );

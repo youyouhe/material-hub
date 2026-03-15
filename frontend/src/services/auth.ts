@@ -4,6 +4,7 @@
  */
 
 const TOKEN_KEY = 'materialhub_auth_token';
+const USER_KEY = 'materialhub_user';
 
 /**
  * Get the current authentication token from localStorage.
@@ -24,6 +25,17 @@ export function setToken(token: string): void {
  */
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+export function setUser(user: { id: number; username: string; role: string }): void {
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+export function getUser(): { id: number; username: string; role: string } | null {
+  const raw = localStorage.getItem(USER_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
 }
 
 /**
