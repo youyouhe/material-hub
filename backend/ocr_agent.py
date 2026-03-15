@@ -14,22 +14,20 @@ logger = logging.getLogger("materialhub.ocr_agent")
 EXTRACTION_PROMPT = """你是一个专业的文档信息提取助手。请仔细分析以下OCR识别的文本内容，完成信息提取任务。
 
 ## 任务要求
-1. **识别材料类型**：判断这是什么类型的文档
-   - license: 营业执照
-   - legal_person_cert: 法定代表人资格证明书
-   - id_card: 身份证
-   - education: 学历证书、毕业证、学位证
-   - iso_cert: ISO认证证书（ISO9001、ISO14001、ISO27001等）
-   - certificate: 其他各类证书
-   - contract: 合同
-   - authorization: 授权书、委托书
-   - invoice: 发票
-   - other: 其他类型
+1. **识别材料类型**：用简短的中文描述这是什么类型的文档。
+   不要受限于预设分类，请根据文档实际内容自由判断，例如：
+   "营业执照"、"身份证"、"合同"、"产品说明书"、"公司简介"、
+   "ISO认证证书"、"资质证书"、"荣誉证书"、"验收报告"、"发票"、
+   "投标文件"、"授权书"、"技术方案"、"学历证书"、"职称证书"等。
+   如果文档不属于常见类别，直接用最准确的中文名称描述即可。
 
-2. **提取结构化信息**：根据材料类型提取关键字段
-   - 公司相关：公司名称、法定代表人、统一社会信用代码、地址、注册资本等
-   - 人员相关：姓名、身份证号、性别、出生日期、学历、专业等
-   - 证书相关：证书名称、持有人/单位、发证机构、证书编号、发证日期、有效期等
+2. **提取结构化信息**：根据文档内容，尽可能提取所有有价值的结构化字段，包括但不限于：
+   - 名称类：公司名称、人员姓名、文档名称、产品名称、项目名称等
+   - 编号类：统一社会信用代码、证书编号、合同编号、身份证号、发票号码等
+   - 日期类：发证日期、有效期、签订日期、开票日期等
+   - 金额类：合同金额、注册资本、发票金额等
+   - 机构类：发证机关、认证机构、甲方、乙方等
+   - 其他：地址、经营范围、认证范围、资质等级、学历、专业、职称等
 
 ## 材料信息
 - **文档标题**：{title}
@@ -44,44 +42,27 @@ EXTRACTION_PROMPT = """你是一个专业的文档信息提取助手。请仔细
 
 ```json
 {{
-  "material_type": "类型代码",
+  "material_type": "文档类型的中文描述",
   "confidence": 0.95,
   "extracted_data": {{
-    // 根据材料类型提取的结构化字段
-    // 营业执照示例：
-    // "company_name": "公司名称",
-    // "legal_person": "法定代表人",
-    // "credit_code": "统一社会信用代码",
-    // "address": "注册地址",
-    // "registered_capital": "注册资本"
-
-    // 身份证示例：
-    // "name": "姓名",
-    // "gender": "性别",
-    // "nation": "民族",
-    // "birth_date": "1990-01-01",
-    // "id_number": "110101199001011234",
-    // "address": "住址",
-    // "issue_authority": "签发机关",
-    // "valid_period": "2020-01-01至2030-01-01"
-
-    // 证书示例：
-    // "cert_name": "证书名称",
-    // "holder": "持有人或单位",
-    // "cert_number": "证书编号",
-    // "issue_date": "2023-01-01",
-    // "expiry_date": "2026-01-01",
-    // "issue_authority": "发证机关",
-    // "scope": "认证范围"
+    // 根据文档内容提取所有有价值的字段
+    // 字段名使用英文小写下划线格式
+    // 常用字段名参考：
+    //   company_name, legal_person, credit_code, address, registered_capital,
+    //   name, id_number, gender, birth_date, education, major,
+    //   cert_name, cert_number, issue_date, expiry_date, issue_authority, scope,
+    //   contract_name, party_a, party_b, contract_amount, sign_date, project_name,
+    //   product_name, manufacturer, model, description,
+    //   invoice_number, amount, buyer, seller
   }},
   "summary": "简短总结这份材料的主要内容（1-2句话）"
 }}
 ```
 
 注意事项：
-1. 所有字段尽量提取，如果OCR文本中没有该字段信息，则不要包含该字段
-2. 日期格式统一为 YYYY-MM-DD
-3. 身份证号等敏感信息完整提取，系统会自动处理脱敏
+1. material_type 必须是准确的中文描述，反映文档的真实类型
+2. 所有字段尽量提取，如果OCR文本中没有该字段信息，则不要包含该字段
+3. 日期格式统一为 YYYY-MM-DD
 4. confidence取值范围0.0-1.0，表示识别的置信度
 5. 如果OCR文本质量差或无法识别，confidence应该较低（<0.5）
 """
@@ -205,90 +186,60 @@ def create_entity_from_extraction(
     extracted_data: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    根据提取结果创建公司或人员实体信息
-
-    Args:
-        material_type: 材料类型
-        extracted_data: 提取的数据
-
-    Returns:
-        {
-            "entity_type": "company" | "person" | None,
-            "entity_data": {...}
-        }
+    根据提取结果创建公司或人员实体信息。
+    不依赖固定类型列表，而是根据 extracted_data 中的字段智能判断。
     """
-    if material_type in ['license', 'legal_person_cert', 'contract', 'agreement', 'other']:
-        # 提取公司信息（营业执照、法人证明、合同等）
-        company_data = {}
-
-        # 对于合同类型，优先提取乙方（通常是供应商/服务商）
-        # 优先级：supplier_name > service_party > party_b > company_name > name
-        name_priority = [
-            'supplier_name',  # 供应商名称（最高优先级）
-            'service_party',  # 服务方/受托方（乙方的另一种表述）
-            'party_b',        # 乙方（次优先级）
-            'company_name',   # 公司名称
-            'name',           # 通用名称
-            'client_party',   # 委托方/客户方（甲方的另一种表述）
-            'client_name',    # 客户名称
-            'party_a',        # 甲方
-        ]
-
-        # 按优先级选择公司名称
-        company_name = None
-        for key in name_priority:
-            if key in extracted_data and extracted_data[key]:
-                company_name = extracted_data[key]
-                break
-
-        if company_name:
-            company_data['name'] = company_name
-
-        # 其他字段映射
-        field_mapping = {
-            'legal_person': 'legal_person',
-            'legal_representative': 'legal_person',
-            'credit_code': 'credit_code',
-            'unified_social_credit_code': 'credit_code',
-            'address': 'address',
-            'registered_address': 'address',
-            'contact_address': 'address',
-        }
-
-        for extracted_key, db_key in field_mapping.items():
-            if extracted_key in extracted_data and extracted_data[extracted_key]:
-                company_data[db_key] = extracted_data[extracted_key]
-
-        if company_data.get('name'):
-            return {
-                "entity_type": "company",
-                "entity_data": company_data
-            }
-
-    elif material_type in ['id_card', 'education']:
-        # 提取人员信息
-        person_data = {}
-
-        field_mapping = {
-            'name': 'name',
-            'id_number': 'id_number',
-            'id_card_number': 'id_number',
-            'education': 'education',
-            'degree': 'education',
-            'major': 'major',
-        }
-
-        for extracted_key, db_key in field_mapping.items():
-            if extracted_key in extracted_data and extracted_data[extracted_key]:
-                person_data[db_key] = extracted_data[extracted_key]
-
-        if person_data.get('name'):
-            return {
-                "entity_type": "person",
-                "entity_data": person_data
-            }
-
-    return {
-        "entity_type": None,
-        "entity_data": {}
+    # 先尝试提取人员信息（身份证号是强信号）
+    person_fields = {
+        'name': 'name',
+        'id_number': 'id_number',
+        'id_card_number': 'id_number',
+        'education': 'education',
+        'degree': 'education',
+        'major': 'major',
     }
+    person_data = {}
+    for extracted_key, db_key in person_fields.items():
+        if extracted_key in extracted_data and extracted_data[extracted_key]:
+            person_data[db_key] = extracted_data[extracted_key]
+
+    # 如果有身份证号，优先认定为人员
+    if person_data.get('id_number') and person_data.get('name'):
+        return {"entity_type": "person", "entity_data": person_data}
+
+    # 尝试提取公司信息
+    company_name_keys = [
+        'supplier_name', 'service_party', 'party_b',
+        'company_name', 'manufacturer',
+        'client_party', 'client_name', 'party_a',
+    ]
+    company_name = None
+    for key in company_name_keys:
+        if key in extracted_data and extracted_data[key]:
+            company_name = extracted_data[key]
+            break
+
+    company_field_mapping = {
+        'legal_person': 'legal_person',
+        'legal_representative': 'legal_person',
+        'credit_code': 'credit_code',
+        'unified_social_credit_code': 'credit_code',
+        'address': 'address',
+        'registered_address': 'address',
+        'contact_address': 'address',
+    }
+    company_data = {}
+    if company_name:
+        company_data['name'] = company_name
+    for extracted_key, db_key in company_field_mapping.items():
+        if extracted_key in extracted_data and extracted_data[extracted_key]:
+            company_data[db_key] = extracted_data[extracted_key]
+
+    if company_data.get('name'):
+        return {"entity_type": "company", "entity_data": company_data}
+
+    # 如果有人员名字但没有身份证号（如学历证书、职称证书）
+    if person_data.get('name'):
+        return {"entity_type": "person", "entity_data": person_data}
+
+    return {"entity_type": None, "entity_data": {}}

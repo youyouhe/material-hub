@@ -32,6 +32,7 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
+    role = Column(String, default="editor")  # admin/editor/viewer
 
     # 关联
     sessions = relationship("SessionToken", back_populates="user", cascade="all, delete-orphan")
@@ -40,6 +41,7 @@ class User(Base):
         return {
             "id": self.id,
             "username": self.username,
+            "role": self.role or "editor",
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_login": self.last_login.isoformat() if self.last_login else None,
         }
@@ -402,6 +404,22 @@ def _run_migrations(engine):
         except Exception as e:
             logger.warning("Migration materials error: %s", e)
 
+        # Migration 4: Add role column to users table
+        try:
+            if 'users' in tables:
+                result = conn.execute(text("PRAGMA table_info(users)"))
+                columns = [row[1] for row in result]
+
+                if 'role' not in columns:
+                    logger.info("Migration: adding role to users")
+                    conn.execute(text("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'editor'"))
+                    conn.commit()
+                    # Set existing admin user to admin role
+                    conn.execute(text("UPDATE users SET role = 'admin' WHERE username = 'admin'"))
+                    conn.commit()
+        except Exception as e:
+            logger.warning("Migration users role error: %s", e)
+
 
 @contextmanager
 def get_session():
@@ -431,6 +449,7 @@ def _create_default_admin():
             admin_user = User(
                 username=default_username,
                 password_hash=password_hash,
+                role="admin",
                 created_at=datetime.utcnow()
             )
             session.add(admin_user)

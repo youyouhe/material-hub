@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "materialhub": {
+      "command": "python",
+      "args": ["c:/material-hub/mcp-server/server.py"],
+      "env": {
+        "MATERIALHUB_API_URL": "http://localhost:3100",
+        "MATERIALHUB_API_TOKEN": "YOUR_MATERIALHUB_API_KEY_HERE"
+      }
+    }
+  }
+}
