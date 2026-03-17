@@ -643,6 +643,282 @@ async def add_document(
 
 
 # ============================================================
+# Tool: get_company_complete
+# ============================================================
+
+@mcp.tool()
+async def get_company_complete(company_name: str = "", company_id: int = 0) -> str:
+    """获取公司完整信息（聚合API）- 一次性获取公司基本信息、营业执照、员工、材料和统计数据。
+
+    相比多次调用 search_documents，此工具提供约10倍性能提升，适用于需要全面了解一家公司的场景。
+
+    Args:
+        company_name: 公司名称（精确匹配或模糊搜索）
+        company_id: 公司实体ID（如果已知ID，优先使用ID查询）
+    """
+    # Resolve company_name to ID if needed
+    if not company_id and not company_name:
+        return "错误: 必须提供 company_name 或 company_id 之一"
+
+    if not company_id and company_name:
+        try:
+            ent_data = await _get("/api/v2/entities/", {"q": company_name, "entity_type": "org", "limit": 5})
+            entities = ent_data.get("results", [])
+            if not entities:
+                return f"未找到名为 '{company_name}' 的公司"
+            if len(entities) > 1:
+                lines = [f"找到 {len(entities)} 家匹配的公司，请选择：\n"]
+                for e in entities[:5]:
+                    lines.append(f"- [ID:{e['id']}] {e['name']}")
+                lines.append(f"\n请使用 company_id 参数指定具体公司")
+                return "\n".join(lines)
+            company_id = entities[0]["id"]
+        except httpx.HTTPStatusError as e:
+            return f"查询失败: {e.response.status_code}"
+
+    # Fetch complete company info
+    try:
+        data = await _get(f"/api/v2/companies/{company_id}/complete")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return f"公司 ID {company_id} 不存在"
+        return f"查询失败: {e.response.status_code} {e.response.text}"
+
+    company = data.get("company", {})
+    license_info = data.get("license", {})
+    employees = data.get("employees", [])
+    materials = data.get("materials", [])
+    aggregated = data.get("aggregated_info", {})
+    stats = data.get("statistics", {})
+
+    lines = [f"# {company.get('name', '未知公司')}\n"]
+
+    # Basic company info
+    lines.append("## 基本信息")
+    lines.append(f"- 公司ID: {company.get('id')}")
+    lines.append(f"- 类型: {company.get('entity_type', 'org')}")
+    if company.get("attributes"):
+        for k, v in company["attributes"].items():
+            if v:
+                lines.append(f"- {k}: {v}")
+
+    # License info (from aggregated营业执照 data)
+    if license_info:
+        lines.append("\n## 营业执照信息")
+        field_mapping = {
+            "credit_code": "统一社会信用代码",
+            "legal_person": "法定代表人",
+            "registered_capital": "注册资本",
+            "establishment_date": "成立日期",
+            "business_term": "营业期限",
+            "company_type": "公司类型",
+            "address": "注册地址",
+            "business_scope": "经营范围",
+        }
+        for k, v in license_info.items():
+            if v and k in field_mapping:
+                lines.append(f"- {field_mapping[k]}: {v}")
+
+    # Aggregated extended fields
+    if aggregated:
+        lines.append("\n## 聚合字段")
+        for k, v in aggregated.items():
+            if v:
+                lines.append(f"- {k}: {v}")
+
+    # Statistics
+    if stats:
+        lines.append("\n## 统计信息")
+        lines.append(f"- 材料总数: {stats.get('total_materials', 0)}")
+        lines.append(f"- 员工总数: {stats.get('total_employees', 0)}")
+        if stats.get('expired_materials', 0) > 0:
+            lines.append(f"- ⚠️ 过期材料: {stats['expired_materials']}")
+
+    # Employees
+    if employees:
+        lines.append(f"\n## 员工 ({len(employees)} 人)")
+        for emp in employees[:20]:  # 最多显示20人
+            emp_name = emp.get("name", "未知")
+            emp_id = emp.get("id")
+            emp_attrs = emp.get("attributes", {})
+
+            # 提取关键信息
+            info_parts = [f"{emp_name} (ID:{emp_id})"]
+            if emp_attrs.get("gender"):
+                info_parts.append(emp_attrs["gender"])
+            if emp_attrs.get("age"):
+                info_parts.append(f"{emp_attrs['age']}岁")
+            if emp_attrs.get("education"):
+                info_parts.append(emp_attrs["education"])
+            if emp_attrs.get("major"):
+                info_parts.append(emp_attrs["major"])
+
+            lines.append(f"- {' | '.join(info_parts)}")
+
+        if len(employees) > 20:
+            lines.append(f"  ... 及其他 {len(employees) - 20} 人")
+
+    # Materials summary (按类型分组)
+    if materials:
+        lines.append(f"\n## 材料清单 ({len(materials)} 份)")
+        by_type = {}
+        for mat in materials:
+            doc_type = mat.get("doc_type", {}).get("name", "未分类")
+            if doc_type not in by_type:
+                by_type[doc_type] = []
+            by_type[doc_type].append(mat)
+
+        for doc_type, mats in sorted(by_type.items()):
+            lines.append(f"\n### {doc_type} ({len(mats)} 份)")
+            for mat in mats[:10]:  # 每个类型最多显示10个
+                title = mat.get("title", "未命名")
+                doc_id = mat.get("id")
+                status = mat.get("status", "")
+                expiry = mat.get("expiry_date", "")
+                expiry_str = f" | 到期: {expiry}" if expiry else ""
+                lines.append(f"- [{doc_id}] {title} ({status}{expiry_str})")
+            if len(mats) > 10:
+                lines.append(f"  ... 及其他 {len(mats) - 10} 份")
+
+    lines.append(f"\n---\n提示: 使用 get_document_detail(document_id) 查看材料详情")
+
+    return "\n".join(lines)
+
+
+# ============================================================
+# Tool: get_person_complete
+# ============================================================
+
+@mcp.tool()
+async def get_person_complete(person_name: str = "", person_id: int = 0) -> str:
+    """获取人员完整信息（聚合API）- 一次性获取人员基本信息、所属公司、材料和证书清单。
+
+    相比多次调用 search_documents，此工具提供约10倍性能提升，适用于需要全面了解某个员工的场景。
+
+    Args:
+        person_name: 人员姓名（精确匹配或模糊搜索）
+        person_id: 人员实体ID（如果已知ID，优先使用ID查询）
+    """
+    # Resolve person_name to ID if needed
+    if not person_id and not person_name:
+        return "错误: 必须提供 person_name 或 person_id 之一"
+
+    if not person_id and person_name:
+        try:
+            ent_data = await _get("/api/v2/entities/", {"q": person_name, "entity_type": "person", "limit": 5})
+            entities = ent_data.get("results", [])
+            if not entities:
+                return f"未找到名为 '{person_name}' 的人员"
+            if len(entities) > 1:
+                lines = [f"找到 {len(entities)} 位匹配的人员，请选择：\n"]
+                for e in entities[:5]:
+                    attrs = e.get("attributes", {})
+                    info = f"{e['name']}"
+                    if attrs.get("company"):
+                        info += f" ({attrs['company']})"
+                    if attrs.get("position"):
+                        info += f" - {attrs['position']}"
+                    lines.append(f"- [ID:{e['id']}] {info}")
+                lines.append(f"\n请使用 person_id 参数指定具体人员")
+                return "\n".join(lines)
+            person_id = entities[0]["id"]
+        except httpx.HTTPStatusError as e:
+            return f"查询失败: {e.response.status_code}"
+
+    # Fetch complete person info
+    try:
+        data = await _get(f"/api/v2/persons/{person_id}/complete")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return f"人员 ID {person_id} 不存在"
+        return f"查询失败: {e.response.status_code} {e.response.text}"
+
+    person = data.get("person", {})
+    company = data.get("company")
+    materials = data.get("materials", [])
+    aggregated = data.get("aggregated_info", {})
+    certificates = data.get("certificates", [])
+
+    lines = [f"# {person.get('name', '未知人员')}\n"]
+
+    # Basic person info
+    lines.append("## 基本信息")
+    lines.append(f"- 人员ID: {person.get('id')}")
+
+    if person.get("attributes"):
+        field_mapping = {
+            "gender": "性别",
+            "age": "年龄",
+            "birth_date": "出生日期",
+            "id_number": "身份证号",
+            "education": "学历",
+            "major": "专业",
+            "position": "职位",
+            "phone": "电话",
+            "email": "邮箱",
+        }
+        for k, v in person["attributes"].items():
+            if v:
+                label = field_mapping.get(k, k)
+                lines.append(f"- {label}: {v}")
+
+    # Company info
+    if company:
+        lines.append(f"\n## 所属公司")
+        lines.append(f"- {company.get('name')} (ID:{company.get('id')})")
+
+    # Aggregated extended fields
+    if aggregated:
+        lines.append("\n## 聚合字段")
+        for k, v in aggregated.items():
+            if v:
+                lines.append(f"- {k}: {v}")
+
+    # Certificates summary
+    if certificates:
+        lines.append(f"\n## 证书清单 ({len(certificates)} 个)")
+        for cert in certificates:
+            cert_name = cert.get("cert_name") or cert.get("title", "未知证书")
+            cert_number = cert.get("cert_number", "")
+            expiry = cert.get("expiry_date", "")
+            issue_date = cert.get("issue_date", "")
+
+            info_parts = [cert_name]
+            if cert_number:
+                info_parts.append(f"编号: {cert_number}")
+            if issue_date:
+                info_parts.append(f"发证: {issue_date}")
+            if expiry:
+                info_parts.append(f"到期: {expiry}")
+
+            lines.append(f"- {' | '.join(info_parts)}")
+
+    # Materials summary
+    if materials:
+        lines.append(f"\n## 材料清单 ({len(materials)} 份)")
+        by_type = {}
+        for mat in materials:
+            doc_type = mat.get("doc_type", {}).get("name", "未分类")
+            if doc_type not in by_type:
+                by_type[doc_type] = []
+            by_type[doc_type].append(mat)
+
+        for doc_type, mats in sorted(by_type.items()):
+            lines.append(f"\n### {doc_type} ({len(mats)} 份)")
+            for mat in mats[:5]:  # 每个类型最多显示5个
+                title = mat.get("title", "未命名")
+                doc_id = mat.get("id")
+                status = mat.get("status", "")
+                lines.append(f"- [{doc_id}] {title} ({status})")
+            if len(mats) > 5:
+                lines.append(f"  ... 及其他 {len(mats) - 5} 份")
+
+    lines.append(f"\n---\n提示: 使用 get_document_detail(document_id) 查看材料详情")
+
+    return "\n".join(lines)
+
+
+# ============================================================
 # Entry point
 # ============================================================
 
