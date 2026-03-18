@@ -13,6 +13,9 @@ dist/
 .vite/
 package-lock.json
 
+# MCP config (contains API keys)
+.mcp.json
+
 # IDE
 .vscode/
 .idea/

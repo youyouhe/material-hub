@@ -445,6 +445,15 @@ def _run_ocr(doc_id: int, file_info: dict) -> Optional[str]:
 
             page = pdf_doc[page_idx]
             pix = page.get_pixmap(dpi=200)
+
+            # Downscale if image is too large for OCR API (max 4096px on long side, ~2MB)
+            max_dim = 4096
+            if pix.width > max_dim or pix.height > max_dim:
+                scale = max_dim / max(pix.width, pix.height)
+                scaled_dpi = int(200 * scale)
+                logger.info(f"Page {page_idx} too large ({pix.width}x{pix.height}), rescaling to dpi={scaled_dpi}")
+                pix = page.get_pixmap(dpi=scaled_dpi)
+
             png_bytes = pix.tobytes("png")
 
             text = ocr_image_bytes(png_bytes, page_number=page_idx + 1, label=f"doc{doc_id}_p{page_idx+1}")
@@ -1148,7 +1157,7 @@ def process_document(doc_id: int):
 
         if not ocr_text:
             logger.warning(f"OCR returned no text for doc {doc_id}")
-            _update_processing(doc_id, "completed")
+            _update_processing(doc_id, "failed", error="OCR未能识别出文本，可能是图片过大、格式不支持或OCR服务异常")
             return
 
         # Step 3: LLM Classification

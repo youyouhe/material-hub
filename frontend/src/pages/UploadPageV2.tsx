@@ -245,6 +245,11 @@ export default function UploadPageV2({ userRole }: UploadPageV2Props) {
                         )}
                         {statusInfo.text}
                       </span>
+                      {item.processing_status === 'failed' && item.processing_error && (
+                        <p className="text-xs text-cp-rose/70 mt-1 max-w-xs truncate" title={item.processing_error}>
+                          {item.processing_error}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-cp-dim">{item.created_at?.slice(0, 16).replace('T', ' ')}</td>
                     {canEdit && (

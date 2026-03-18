@@ -106,7 +106,7 @@ def intelligent_extract(
         ]
 
         logger.info(f"开始智能解析: {material_title}")
-        response = llm.chat(messages, temperature=0.3, max_tokens=2000)
+        response = llm.chat(messages, temperature=0.3, max_tokens=4096)
 
         # 解析JSON响应
         # 尝试提取JSON块（如果LLM返回了markdown代码块）
@@ -116,7 +116,24 @@ def intelligent_extract(
         elif "```" in json_text:
             json_text = json_text.split("```")[1].split("```")[0].strip()
 
-        result = json.loads(json_text)
+        try:
+            result = json.loads(json_text)
+        except json.JSONDecodeError:
+            # JSON可能被截断，尝试用正则提取关键字段进行降级
+            import re
+            mt = re.search(r'"material_type"\s*:\s*"([^"]+)"', json_text)
+            conf = re.search(r'"confidence"\s*:\s*([\d.]+)', json_text)
+            summ = re.search(r'"summary"\s*:\s*"([^"]+)"', json_text)
+            if mt:
+                logger.warning(f"JSON截断，降级提取: material_type={mt.group(1)}")
+                result = {
+                    "material_type": mt.group(1),
+                    "confidence": float(conf.group(1)) if conf else 0.5,
+                    "extracted_data": {},
+                    "summary": summ.group(1) if summ else "",
+                }
+            else:
+                raise
 
         logger.info(
             f"✅ 智能解析成功: type={result.get('material_type')}, "

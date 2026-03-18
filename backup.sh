@@ -21,7 +21,7 @@ IMAGES_DIR="$BACKEND_DIR/data/images"
 UPLOADS_DIR="$BACKEND_DIR/data/uploads"
 
 # 保留天数
-KEEP_DAYS=30
+KEEP_DAYS=7
 
 # 日志文件
 LOG_FILE="$PROJECT_ROOT/backup.log"

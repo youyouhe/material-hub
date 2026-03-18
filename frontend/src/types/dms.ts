@@ -297,6 +297,7 @@ export interface UploadQueueItem {
   doc_type: { id: number; name: string; code: string } | null;
   folder: { id: number; name: string; path: string } | null;
   processing_status: string;
+  processing_error: string | null;
   thumbnail_url: string | null;
   created_at: string | null;
 }
