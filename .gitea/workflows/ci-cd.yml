@@ -23,7 +23,7 @@ jobs:
           GT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          export PATH="$PATH_PREPEND:$PATH"
+          export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           git clone --depth 1 "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git" . \
             || git clone --depth 1 "http://10.0.0.2:3000/hem/material-hub.git" .
           echo "✓ HEAD: $(git rev-parse --short HEAD)"
@@ -32,7 +32,7 @@ jobs:
       - name: 前端类型检查 (tsc --noEmit)
         run: |
           set -e
-          export PATH="$PATH_PREPEND:$PATH"
+          export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           cd frontend
           npm install --no-audit --no-fund
           echo "---- tsc 类型检查 ----"
@@ -42,7 +42,7 @@ jobs:
       - name: 前端构建 (vite build)
         run: |
           set -e
-          export PATH="$PATH_PREPEND:$PATH"
+          export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           cd frontend
           npm run build
           echo "---- dist 产物 ----"
@@ -51,7 +51,7 @@ jobs:
       - name: 后端依赖安装检查 (Python 3.12)
         run: |
           set -e
-          export PATH="$PATH_PREPEND:$PATH"
+          export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           PYBIN=$(command -v python3.12 || command -v python3.11 || command -v python3.10 || echo /usr/local/bin/python3)
           echo "使用 Python: $PYBIN ($($PYBIN --version))"
           $PYBIN -m venv /tmp/ci-venv
@@ -107,7 +107,7 @@ jobs:
           GT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          export PATH="$PATH_PREPEND:$PATH"
+          export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           PYBIN=$(command -v python3.12 || command -v python3.11 || command -v python3.10 || echo /usr/local/bin/python3)
           echo "Python: $PYBIN ($($PYBIN --version))"
 
@@ -161,7 +161,7 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           set -e
-          export PATH="$PATH_PREPEND:$PATH"
+          export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           cd "$DEPLOY_PATH"
           echo "---- 重启服务 ----"
           # venv 已在上一步用 Python 3.12 建好,start.sh 会直接 source 它
@@ -172,7 +172,7 @@ jobs:
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          export PATH="$PATH_PREPEND:$PATH"
+          export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           echo "---- 等待 Backend 就绪 ----"
           for i in $(seq 1 20); do
             if curl -sf http://localhost:8201/health > /dev/null 2>&1; then
