@@ -68,3 +68,6 @@ check_timeout.sh
 # Chinese filename files
 *[\u4e00-\u9fff]*.docx
 *[\u4e00-\u9fff]*.doc
+
+# 备份目录
+backend/backup_*/
