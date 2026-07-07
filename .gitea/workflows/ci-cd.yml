@@ -164,10 +164,23 @@ jobs:
           set -e
           export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           cd "$DEPLOY_PATH"
-          echo "---- 重启服务 ----"
-          # venv 已在上一步用 Python 3.12 建好,start.sh 会直接 source 它
-          ./restart.sh || ./start.sh
-          echo "✓ 服务已重启"
+          echo "---- 停止旧进程 ----"
+          pkill -f "python main.py" 2>/dev/null || true
+          pkill -f "vite" 2>/dev/null || true
+          sleep 1
+          echo "---- 启动后端 (macOS nohup) ----"
+          cd backend
+          source venv/bin/activate
+          nohup python main.py > ../backend.log 2>&1 &
+          BGPID=$!
+          echo "后端 PID: $BGPID"
+          cd ..
+          echo "---- 启动前端 (vite dev) ----"
+          cd frontend
+          nohup npm run dev > ../frontend.log 2>&1 &
+          FGPID=$!
+          echo "前端 PID: $FGPID"
+          echo "✓ 服务已启动"
 
       - name: 健康检查
         env:
