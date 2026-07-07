@@ -1,0 +1,160 @@
+name: CI/CD
+
+# 触发:推送到任意分支(check),推送到 main(check + deploy),手动
+on:
+  push:
+    branches:
+      - '*'           # 所有分支都跑 check
+  workflow_dispatch:
+
+jobs:
+  # ============================================================
+  # Stage 1: check — 前端类型检查 + 构建 + 后端依赖检查
+  # ============================================================
+  check:
+    runs-on: self-hosted
+    steps:
+      - name: 拉取代码
+        env:
+          GT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git clone --depth 1 "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git" . \
+            || git clone --depth 1 "http://10.0.0.2:3000/hem/material-hub.git" .
+          echo "✓ HEAD: $(git rev-parse --short HEAD)"
+
+      - name: 前端类型检查 (tsc --noEmit)
+        run: |
+          set -e
+          export PATH="$HOME/node/bin:$PATH"
+          echo "node: $(node --version)"
+          cd frontend
+          npm install --no-audit --no-fund
+          echo "---- tsc 类型检查 ----"
+          npx tsc --noEmit
+          echo "✓ 类型检查通过"
+
+      - name: 前端构建 (vite build)
+        run: |
+          set -e
+          export PATH="$HOME/node/bin:$PATH"
+          cd frontend
+          npm run build
+          echo "---- dist 产物 ----"
+          ls -lh dist/ | head
+
+      - name: 后端依赖安装检查
+        run: |
+          set -e
+          echo "---- 创建临时 venv ----"
+          python3 -m venv /tmp/ci-venv
+          source /tmp/ci-venv/bin/activate
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          echo "✓ 后端依赖全部可安装"
+
+      - name: 后端 import 检查
+        run: |
+          set -e
+          source /tmp/ci-venv/bin/activate
+          cd backend
+          python -c "
+          import importlib
+          # 核心模块导入检查(语法/依赖错误会暴露)
+          mods = ['main', 'dms_models', 'dms_processor', 'dms_search', 'llm_provider',
+                  'kb_database', 'kb_models', 'kb_ingest', 'kb_search', 'kb_multihop',
+                  'kb_graph', 'kb_extraction', 'kb_entity_sync', 'kb_event_ingest',
+                  'kb_chunking', 'kb_embedding', 'kb_asr', 'kb_docx', 'chat_tools']
+          failed = []
+          for m in mods:
+              try:
+                  importlib.import_module(m)
+              except Exception as e:
+                  failed.append((m, str(e)[:80]))
+          if failed:
+              for m, e in failed:
+                  print(f'  ✗ {m}: {e}')
+              raise SystemExit(f'❌ {len(failed)} 个模块导入失败')
+          print(f'✓ {len(mods)} 个核心模块导入成功')
+          "
+
+      - name: 归档前端构建产物
+        run: |
+          mkdir -p "$HOME/artifacts/materialhub-frontend"
+          rm -rf "$HOME/artifacts/materialhub-frontend/dist"
+          cp -r frontend/dist "$HOME/artifacts/materialhub-frontend/dist"
+          echo "✓ dist 已归档"
+
+      - name: 清理临时 venv
+        if: always()
+        run: rm -rf /tmp/ci-venv
+
+  # ============================================================
+  # Stage 2: deploy — 仅 main 分支,本地部署(Runner = 服务器)
+  # ============================================================
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    steps:
+      - name: 部署到本地服务器
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -e
+          if [ -z "$DEPLOY_PATH" ]; then
+            echo "✗ 未配置 DEPLOY_PATH secret"
+            exit 1
+          fi
+          echo "部署路径: $DEPLOY_PATH"
+
+          cd "$DEPLOY_PATH"
+          echo "---- 拉取最新代码 ----"
+          git fetch --all
+          git reset --hard origin/main
+          echo "✓ 当前版本: $(git rev-parse --short HEAD)"
+
+          echo "---- 更新后端依赖 ----"
+          cd backend
+          if [ ! -d "venv" ]; then
+            python3 -m venv venv
+          fi
+          source venv/bin/activate
+          pip install -r requirements.txt
+          echo "✓ 后端依赖已更新"
+
+          echo "---- 构建前端 ----"
+          cd ../frontend
+          export PATH="$HOME/node/bin:$PATH"
+          npm install --no-audit --no-fund
+          npm run build
+          echo "✓ 前端构建完成"
+
+      - name: 重启服务
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -e
+          cd "$DEPLOY_PATH"
+          echo "---- 重启服务 ----"
+          ./restart.sh
+          echo "✓ 服务已重启"
+
+      - name: 健康检查
+        run: |
+          echo "---- 等待 Backend 就绪 ----"
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:8201/health > /dev/null 2>&1; then
+              echo "✓ Backend healthy (第 ${i} 次检查)"
+              exit 0
+            fi
+            echo "  等待中... ($i/15)"
+            sleep 2
+          done
+          echo "✗ Backend 健康检查失败"
+          echo "---- 最近日志 ----"
+          tail -20 "${DEPLOY_PATH:-.}/backend.log" 2>/dev/null || true
+          exit 1
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
