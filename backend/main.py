@@ -1,0 +1,256 @@
+"""MaterialHub API server entry point."""
+
+import os
+import logging
+import signal
+import sys
+import atexit
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from project root
+env_path = Path(__file__).resolve().parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from database import init_db, get_session
+from dms_models import init_dms_db
+from seed_data import seed_all
+from kb_database import init_kb_db
+from routers import auth  # Legacy auth — keep for transition period
+from routers import v2_folders, v2_doc_types, v2_documents, v2_files, v2_entities, v2_tags, v2_compat, v2_upload, v2_search, v2_expiry, v2_admin, v2_audit, v2_bids, v2_bid_requirements, v2_migrate, v2_settings, v2_agents, v2_chat, v2_auth, v2_transfer, v2_roles, v2_kb
+from auth import validate_session
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+)
+
+logger = logging.getLogger("materialhub.main")
+
+app = FastAPI(title="MaterialHub", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ========== 信号处理器：记录收到的信号 ==========
+def signal_handler(signum, frame):
+    """记录接收到的信号"""
+    signal_name = signal.Signals(signum).name
+    logger.warning(f"🚨 收到信号: {signal_name} (信号编号: {signum})")
+    logger.warning(f"   帧信息: {frame}")
+    # 不阻止默认处理，让uvicorn正常处理信号
+    sys.exit(0)
+
+
+def exit_handler():
+    """程序退出时的处理"""
+    logger.warning("🛑 程序正在退出...")
+    logger.warning(f"   退出码即将设置")
+
+
+# 注册信号处理器
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+if hasattr(signal, 'SIGHUP'):
+    signal.signal(signal.SIGHUP, signal_handler)
+
+# 注册退出处理器
+atexit.register(exit_handler)
+
+logger.info("✅ 信号处理器已注册: SIGTERM, SIGINT, SIGHUP")
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Authentication middleware to protect API endpoints."""
+    # Exempt paths that don't require authentication
+    exempt_paths = ["/api/auth/login", "/api/v2/auth/login", "/health", "/docs", "/openapi.json", "/redoc", "/api/v2/settings/mcp/resolve"]
+
+    if request.url.path in exempt_paths:
+        return await call_next(request)
+
+    # Exempt static file serving (images, thumbnails)
+    # Users must still be logged in to access the web app and see image URLs
+    if request.url.path.startswith("/api/files/") or request.url.path.startswith("/api/v2/files/"):
+        return await call_next(request)
+    if "/page/" in request.url.path and request.url.path.endswith("/thumb"):
+        return await call_next(request)
+
+    # Protect all /api/* paths except auth/login and files
+    if request.url.path.startswith("/api/"):
+        authorization = request.headers.get("authorization")
+
+        # Check if token is in query params (for image preview)
+        token = None
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+        else:
+            # Try to get token from query params
+            query_params = dict(request.query_params)
+            token = query_params.get("token")
+
+        # Support static API key for MCP / external integrations (legacy)
+        api_key = os.getenv("MATERIALHUB_API_KEY", "")
+        if api_key and token == api_key:
+            request.state.user_id = 1  # Map to admin user
+            request.state.user_role = "admin"
+            return await call_next(request)
+
+        # Check API agent tokens (mh-agent-*)
+        if token and token.startswith("mh-agent-"):
+            from dms_models import get_dms_session, ApiAgent
+            from datetime import datetime
+            agent_info = None
+            with get_dms_session() as dms_db:
+                agent = dms_db.query(ApiAgent).filter(
+                    ApiAgent.token == token,
+                    ApiAgent.is_active == True,
+                ).first()
+                if agent:
+                    agent_info = (agent.id, agent.role)
+                    agent.last_used_at = datetime.utcnow()
+            # Session closed before call_next to avoid SQLite locking
+            if agent_info:
+                request.state.user_id = None
+                request.state.user_role = agent_info[1]
+                request.state.agent_id = agent_info[0]
+                return await call_next(request)
+            else:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or inactive agent token"}
+                )
+
+        if not token:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Not authenticated"}
+            )
+
+        # Try legacy session validation first
+        with get_session() as db:
+            user = validate_session(db, token)
+            if user:
+                request.state.user_id = user.id
+                request.state.user_role = user.role or "editor"
+                return await call_next(request)
+
+        # Fall back to DMS v2 session validation
+        from dms_models import get_dms_session, DmsSession, DmsUser as DmsUserModel
+        from datetime import datetime as dt
+        with get_dms_session() as dms_db:
+            dms_session = dms_db.query(DmsSession).filter(
+                DmsSession.token == token
+            ).first()
+            if dms_session and dms_session.expires_at >= dt.utcnow():
+                dms_user = dms_session.user
+                dms_user.last_login = dt.utcnow()
+                dms_db.flush()
+                request.state.user_id = dms_user.legacy_user_id or dms_user.id
+                request.state.user_role = dms_user.role or "editor"
+                return await call_next(request)
+
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid or expired session"}
+        )
+
+    return await call_next(request)
+
+
+app.include_router(auth.router)  # Legacy auth — keep for transition
+
+# DMS v2 routers
+app.include_router(v2_folders.router)
+app.include_router(v2_doc_types.router)
+app.include_router(v2_documents.router)
+app.include_router(v2_files.router)
+app.include_router(v2_entities.router)
+app.include_router(v2_tags.router)
+app.include_router(v2_compat.router)
+app.include_router(v2_upload.router)
+app.include_router(v2_search.router)
+app.include_router(v2_expiry.router)
+app.include_router(v2_admin.router)
+app.include_router(v2_audit.router)
+app.include_router(v2_bids.router)
+app.include_router(v2_bid_requirements.router)
+app.include_router(v2_migrate.router)
+app.include_router(v2_settings.router)
+app.include_router(v2_agents.router)
+app.include_router(v2_chat.router)
+app.include_router(v2_auth.router)
+app.include_router(v2_transfer.router)
+app.include_router(v2_roles.router)
+app.include_router(v2_kb.router)
+
+
+@app.on_event("startup")
+def startup():
+    """应用启动事件"""
+    logger.info("🚀 MaterialHub 启动中...")
+    logger.info(f"   进程ID: {os.getpid()}")
+    logger.info(f"   父进程ID: {os.getppid()}")
+
+    init_db()
+    init_dms_db()
+    seed_all()
+    init_kb_db()
+
+    logger.info("✅ MaterialHub 启动完成")
+
+
+@app.on_event("shutdown")
+def shutdown():
+    """应用关闭事件"""
+    logger.warning("🛑 MaterialHub 收到关闭事件")
+    logger.warning("   正在清理资源...")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "service": "MaterialHub"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.getenv("PORT", "8201"))
+
+    logger.info("=" * 60)
+    logger.info("MaterialHub Backend Server")
+    logger.info("=" * 60)
+    logger.info(f"进程ID: {os.getpid()}")
+    logger.info(f"监听端口: {port}")
+    logger.info("=" * 60)
+
+    try:
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=port,
+            log_level="info",
+            access_log=True,
+            # 显式配置超时参数
+            timeout_keep_alive=5,
+            timeout_graceful_shutdown=None,  # 不设置优雅关闭超时
+            # 不限制最大请求数
+            limit_max_requests=None,
+        )
+    except KeyboardInterrupt:
+        logger.info("收到键盘中断 (Ctrl+C)")
+    except Exception as e:
+        logger.error(f"服务器异常退出: {e}", exc_info=True)
+    finally:
+        logger.warning("📊 服务器已停止")

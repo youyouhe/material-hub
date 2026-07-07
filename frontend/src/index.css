@@ -1,0 +1,247 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Theme: CSS Custom Properties
+   Dark = default (:root), Light = [data-theme="light"]
+   ============================================================ */
+
+:root {
+  --cp-bg: #0F0F23;
+  --cp-card: #12122A;
+  --cp-footer: #0A0A1A;
+  --cp-purple: #7C3AED;
+  --cp-purple-light: #A78BFA;
+  --cp-rose: #F43F5E;
+  --cp-cyan: #06B6D4;
+  --cp-text: #E2E8F0;
+  --cp-muted: #8B8BA0;
+  --cp-dim: #5B5B70;
+  --cp-border: rgba(124, 58, 237, 0.25);
+  --cp-input: #12122A;
+  --cp-overlay: rgba(10, 10, 26, 0.85);
+  --cp-purple-alpha: rgba(124, 58, 237, 0.06);
+  --cp-purple-alpha-hover: rgba(124, 58, 237, 0.1);
+  --cp-purple-glow: rgba(124, 58, 237, 0.2);
+  --cp-rose-glow: rgba(244, 63, 94, 0.3);
+  --cp-scrollbar-track: #0F0F23;
+  --cp-scrollbar-thumb: rgba(124, 58, 237, 0.4);
+  --cp-scrollbar-thumb-hover: rgba(124, 58, 237, 0.6);
+  --cp-selection-bg: rgba(124, 58, 237, 0.3);
+  --cp-selection-text: #E2E8F0;
+}
+
+[data-theme="light"] {
+  --cp-bg: #F8FAFC;
+  --cp-card: #FFFFFF;
+  --cp-footer: #F1F5F9;
+  --cp-purple: #7C3AED;
+  --cp-purple-light: #6D28D9;
+  --cp-rose: #E11D48;
+  --cp-cyan: #0891B2;
+  --cp-text: #1E293B;
+  --cp-muted: #64748B;
+  --cp-dim: #94A3B8;
+  --cp-border: rgba(124, 58, 237, 0.2);
+  --cp-input: #FFFFFF;
+  --cp-overlay: rgba(0, 0, 0, 0.5);
+  --cp-purple-alpha: rgba(124, 58, 237, 0.04);
+  --cp-purple-alpha-hover: rgba(124, 58, 237, 0.07);
+  --cp-purple-glow: rgba(124, 58, 237, 0.12);
+  --cp-rose-glow: rgba(244, 63, 94, 0.2);
+  --cp-scrollbar-track: #F1F5F9;
+  --cp-scrollbar-thumb: rgba(124, 58, 237, 0.25);
+  --cp-scrollbar-thumb-hover: rgba(124, 58, 237, 0.4);
+  --cp-selection-bg: rgba(124, 58, 237, 0.15);
+  --cp-selection-text: #1E293B;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Exo 2', sans-serif;
+  background-color: var(--cp-bg);
+  color: var(--cp-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Smooth transitions */
+html { scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+  html { scroll-behavior: auto; }
+}
+
+/* ============================================================
+   Neon glow (dark only — disabled in light)
+   ============================================================ */
+
+.glow-purple { text-shadow: 0 0 40px rgba(124, 58, 237, 0.4); }
+.glow-purple-sm { text-shadow: 0 0 20px rgba(124, 58, 237, 0.3); }
+.glow-rose { text-shadow: 0 0 24px rgba(244, 63, 94, 0.5); }
+.glow-cyan { text-shadow: 0 0 24px rgba(6, 182, 212, 0.5); }
+
+[data-theme="light"] .glow-purple,
+[data-theme="light"] .glow-purple-sm,
+[data-theme="light"] .glow-rose,
+[data-theme="light"] .glow-cyan {
+  text-shadow: none;
+}
+
+.box-glow-purple { box-shadow: 0 0 20px var(--cp-purple-glow); }
+.box-glow-rose { box-shadow: 0 0 20px var(--cp-rose-glow); }
+.box-glow-cyan { box-shadow: 0 0 20px rgba(6, 182, 212, 0.08); }
+
+.btn-glow-purple { box-shadow: 0 0 30px rgba(124, 58, 237, 0.35); }
+.btn-glow-rose { box-shadow: 0 0 30px rgba(244, 63, 94, 0.35); }
+
+[data-theme="light"] .btn-glow-purple { box-shadow: 0 2px 8px rgba(124, 58, 237, 0.15); }
+[data-theme="light"] .btn-glow-rose { box-shadow: 0 2px 8px rgba(244, 63, 94, 0.15); }
+
+/* Neon dividers */
+.neon-divider-purple {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--cp-purple), transparent);
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.4);
+}
+
+[data-theme="light"] .neon-divider-purple {
+  box-shadow: 0 0 6px rgba(124, 58, 237, 0.15);
+}
+
+/* Accent bars */
+.accent-bar-purple { height: 2px; background: linear-gradient(90deg, var(--cp-purple), transparent); }
+.accent-bar-rose { height: 2px; background: linear-gradient(90deg, var(--cp-rose), transparent); }
+.accent-bar-cyan { height: 2px; background: linear-gradient(90deg, var(--cp-cyan), transparent); }
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--cp-scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--cp-scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--cp-scrollbar-thumb-hover); }
+
+/* ============================================================
+   Selection
+   ============================================================ */
+
+::selection { background: var(--cp-selection-bg); color: var(--cp-selection-text); }
+
+/* ============================================================
+   Table
+   ============================================================ */
+
+.cp-table thead { background: var(--cp-purple-alpha); }
+.cp-table th { color: var(--cp-purple); font-family: 'Orbitron', sans-serif; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; }
+.cp-table tbody tr { border-bottom: 1px solid var(--cp-border); transition: background 0.15s ease; }
+.cp-table tbody tr:hover { background: var(--cp-purple-alpha); }
+
+/* ============================================================
+   Form inputs
+   ============================================================ */
+
+.cp-input {
+  background: var(--cp-input);
+  border: 1px solid var(--cp-border);
+  color: var(--cp-text);
+  font-family: 'Exo 2', sans-serif;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.cp-input:focus {
+  outline: none;
+  border-color: var(--cp-purple);
+  box-shadow: 0 0 12px var(--cp-purple-glow);
+}
+.cp-input::placeholder { color: var(--cp-dim); }
+
+.cp-select {
+  background: var(--cp-input);
+  border: 1px solid var(--cp-border);
+  color: var(--cp-text);
+  font-family: 'Exo 2', sans-serif;
+}
+.cp-select:focus {
+  outline: none;
+  border-color: var(--cp-purple);
+  box-shadow: 0 0 12px var(--cp-purple-glow);
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+
+.cp-btn-primary {
+  background: linear-gradient(180deg, var(--cp-purple), #9333EA);
+  color: white;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px;
+  letter-spacing: 1px;
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.3);
+  transition: opacity 0.2s ease;
+}
+.cp-btn-primary:hover { opacity: 0.9; }
+.cp-btn-primary:disabled { opacity: 0.4; box-shadow: none; }
+
+[data-theme="light"] .cp-btn-primary {
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.2);
+}
+
+.cp-btn-rose {
+  background: linear-gradient(180deg, var(--cp-rose), #E11D48);
+  color: white;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px;
+  letter-spacing: 1px;
+  box-shadow: 0 0 20px rgba(244, 63, 94, 0.3);
+  transition: opacity 0.2s ease;
+}
+.cp-btn-rose:hover { opacity: 0.9; }
+
+[data-theme="light"] .cp-btn-rose {
+  box-shadow: 0 2px 8px rgba(244, 63, 94, 0.2);
+}
+
+.cp-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--cp-border);
+  color: var(--cp-purple-light);
+  font-family: 'Exo 2', sans-serif;
+  transition: border-color 0.2s ease;
+}
+.cp-btn-ghost:hover { border-color: var(--cp-purple); }
+
+/* ============================================================
+   Modal overlay
+   ============================================================ */
+
+.cp-overlay { background: var(--cp-overlay); backdrop-filter: blur(4px); }
+
+/* ============================================================
+   Card
+   ============================================================ */
+
+.cp-card {
+  background: var(--cp-card);
+  border: 1px solid var(--cp-border);
+  box-shadow: 0 0 15px var(--cp-purple-glow);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.3s ease;
+}
+.cp-card:hover {
+  border-color: var(--cp-purple);
+  box-shadow: 0 0 25px var(--cp-purple-glow);
+}
+
+/* Theme-aware hover states */
+.cp-hover { transition: background 0.15s ease; }
+.cp-hover:hover { background: var(--cp-purple-alpha); }
+
+/* Inline code / badges */
+.cp-badge { background: var(--cp-purple-alpha); color: var(--cp-dim); }

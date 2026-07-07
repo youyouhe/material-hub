@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "materialhub": {
+      "type": "sse",
+      "url": "http://172.22.140.121:8202/sse?token=mcp-sse-3b102781a3575f808394fdcc93463535"
+    }
+  }
+}

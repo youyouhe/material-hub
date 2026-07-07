@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: materialhub-pg
+    environment:
+      POSTGRES_DB: ${PG_DATABASE:-materialhub_kb}
+      POSTGRES_USER: ${PG_USER:-materialhub}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-materialhub}
+    ports:
+      - "${PG_PORT:-5433}:5432"
+    volumes:
+      - ./data/pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: materialhub-backend
+    ports:
+      - "${BACKEND_PORT:-8101}:8101"
+    volumes:
+      - ./backend/data:/app/data
+    environment:
+      - DB_PATH=data/materials.db
+      - DATA_DIR=data
+      - PORT=8101
+      - OCR_SERVICE_URL=${OCR_SERVICE_URL:-http://host.docker.internal:8010}
+      - OCR_TIMEOUT=${OCR_TIMEOUT:-120}
+      - LLM_PROVIDER=${LLM_PROVIDER:-deepseek}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL}
+      - PG_HOST=${PG_HOST:-postgres}
+      - PG_PORT=${PG_PORT:-5432}
+      - PG_DATABASE=${PG_DATABASE:-materialhub_kb}
+      - PG_USER=${PG_USER:-materialhub}
+      - PG_PASSWORD=${PG_PASSWORD:-materialhub}
+    depends_on:
+      - postgres
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: materialhub-frontend
+    ports:
+      - "${FRONTEND_PORT:-3101}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
