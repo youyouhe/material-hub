@@ -1,0 +1,39 @@
+name: Build Frontend
+
+# 触发:推送到 main,或 Actions 页面手动 Run workflow
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: self-hosted            # zklx-mac-runner(Mac 本机,host 模式)
+    steps:
+      - name: 拉取代码(本地 Gitea,无需外网 action)
+        env:
+          GT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git clone --depth 1 "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git" . \
+            || git clone --depth 1 "http://10.0.0.2:3000/hem/material-hub.git" .
+          echo "✓ HEAD: $(git rev-parse --short HEAD)"
+
+      - name: 构建前端(npm install + vite build)
+        run: |
+          set -e
+          export PATH="$HOME/node/bin:$PATH"   # Mac 上 Node 装在 ~/node
+          echo "node: $(node --version)  npm: $(npm --version)"
+          cd frontend
+          npm install --no-audit --no-fund
+          npm run build
+          echo "---- dist 产物 ----"
+          ls -lh dist/ | head
+
+      - name: 归档构建产物
+        run: |
+          mkdir -p "$HOME/artifacts/materialhub-frontend"
+          rm -rf "$HOME/artifacts/materialhub-frontend/dist"
+          cp -r frontend/dist "$HOME/artifacts/materialhub-frontend/dist"
+          echo "✓ 已归档到 $HOME/artifacts/materialhub-frontend/dist"
+          ls "$HOME/artifacts/materialhub-frontend/dist" | head
