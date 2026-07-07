@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CheckCircle2, Circle, FileText, Plus, X, Sparkles, Link } from 'lucide-react';
+import { CheckCircle2, Circle, Plus, X, Sparkles, Link } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getChecklist, getSuggestions, linkBidDocument, unlinkBidDocument, searchDocuments } from '../services/api-v2';
-import type { ChecklistItem, ChecklistResponse, DocumentSuggestion, SearchResult } from '../types/dms';
+import type { ChecklistResponse, DocumentSuggestion, SearchResult } from '../types/dms';
 
 interface BidChecklistProps {
   bidId: number;

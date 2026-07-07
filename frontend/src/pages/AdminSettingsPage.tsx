@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Save, TestTube2, Eye, EyeOff, Brain, Check, Server } from 'lucide-react';
+import { Settings, Save, TestTube2, Eye, EyeOff, Brain, Server } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getSettings, batchUpdateSettings, testOcr, testLlm } from '../services/api-v2';
@@ -387,7 +387,7 @@ export default function AdminSettingsPage() {
 
 function MCPStatusCard() {
   const [status, setStatus] = useState<'loading' | 'online' | 'offline'>('loading');
-  const [info, setInfo] = useState<{ url?: string; token?: string }>({});
+  const [, setInfo] = useState<{ url?: string; token?: string }>({});
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);

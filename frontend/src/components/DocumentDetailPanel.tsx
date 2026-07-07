@@ -1,6 +1,6 @@
 import { RenderValue } from '../utils/format';
 import { useState, useEffect } from 'react';
-import { X, Lock, Unlock, Tag, Users, FileText, Clock, Edit3, Save, XCircle, Eye, Brain, Archive, Trash2, RotateCcw } from 'lucide-react';
+import { X, Lock, Unlock, Tag, Users, Clock, Edit3, Save, XCircle, Eye, Brain, Archive, Trash2, RotateCcw } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getDocument, updateDocument, deleteDocument, lockDocument, unlockDocument, listRevisions } from '../services/api-v2';
@@ -181,7 +181,6 @@ export default function DocumentDetailPanel({ documentId, userRole, onClose, onU
           )}
         </div>
 
-        {/* Status transitions & Delete */}
         {canEdit && (
           <div className="flex items-center gap-2 flex-wrap">
             {VALID_TRANSITIONS[doc.status]?.map((target) => (
@@ -238,7 +237,7 @@ export default function DocumentDetailPanel({ documentId, userRole, onClose, onU
         </div>
 
         {/* AI Extracted Metadata */}
-        {doc.metadata && (doc.metadata.extracted_data || doc.metadata.summary || doc.metadata.material_type) && (() => {
+        {Boolean(doc.metadata && (doc.metadata.extracted_data || doc.metadata.summary || doc.metadata.material_type)) && (() => {
           const meta = doc.metadata as Record<string, unknown>;
           const extracted = (meta.extracted_data || {}) as Record<string, unknown>;
           const summary = meta.summary as string | undefined;
@@ -405,7 +404,7 @@ export default function DocumentDetailPanel({ documentId, userRole, onClose, onU
         <div className="fixed inset-0 z-50 bg-cp-bg flex flex-col">
           <KnowledgeGraphPanel
             entityName={doc.title || `doc-${documentId}`}
-            entities={doc.entities?.map(e => ({ entity_name: e.entity_name, entity_type: (e as any).entity_type, role: e.role }))}
+            entities={doc.entities?.map(e => ({ entity_name: e.entity_name ?? '', entity_type: (e as any).entity_type, role: e.role }))}
             onClose={() => setShowGraph(false)}
           />
         </div>

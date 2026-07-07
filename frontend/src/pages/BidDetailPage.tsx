@@ -7,7 +7,7 @@ import {
   listTeamMembers, addTeamMember, removeTeamMember,
   createRequirementsFromCategory, listDocTypes,
 } from '../services/api-v2';
-import type { BidProject, BidTeamMember, DocType } from '../types/dms';
+import type { BidProject, BidTeamMember } from '../types/dms';
 import BidChecklist from '../components/BidChecklist';
 
 interface BidDetailPageProps {

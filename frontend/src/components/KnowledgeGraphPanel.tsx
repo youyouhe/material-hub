@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Network, DataSet } from 'vis-network/standalone';
 import { RefreshCw, X, Maximize2, Minimize2 } from 'lucide-react';
-import { kbGetEntityGraph, kbSearchEntities, kbGetBatchRelations } from '../services/api-v2';
+import { kbGetEntityGraph, kbGetBatchRelations } from '../services/api-v2';
 import type { KbGraphResponse } from '../types/dms';
 
 interface EntityItem {
@@ -45,7 +45,7 @@ function getShape(type: string): string {
   return 'dot'; // org, person, product, topic, etc.
 }
 
-export default function KnowledgeGraphPanel({ entityName, entities, onClose, onSelectDocument, compact }: Props) {
+export default function KnowledgeGraphPanel({ entityName, entities, onClose, compact }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
   const [loading, setLoading] = useState(true);
@@ -183,7 +183,7 @@ export default function KnowledgeGraphPanel({ entityName, entities, onClose, onS
               try {
                 const ds = (networkRef.current as any).body.data;
                 ds.edges.add(addedEdges);
-                networkRef.current!.fit({ animation: { duration: 300 } });
+                networkRef.current!.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } });
               } catch {}
             }
           }
@@ -220,7 +220,7 @@ export default function KnowledgeGraphPanel({ entityName, entities, onClose, onS
 
       networkRef.current = network;
       // Fit after layout settles, then on window resize
-      const fit = () => { try { network?.fit({ animation: { duration: 400 } }); } catch {} };
+      const fit = () => { try { network?.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } }); } catch {} };
       setTimeout(fit, 300);
       setTimeout(fit, 800);  // Double-fire for slow renders
       window.addEventListener('resize', fit);
