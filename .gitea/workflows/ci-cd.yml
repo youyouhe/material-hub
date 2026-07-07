@@ -117,18 +117,12 @@ jobs:
           fi
           echo "部署路径: $DEPLOY_PATH"
 
-          # 首次部署:目录不存在则 clone
-          if [ ! -d "$DEPLOY_PATH/.git" ]; then
-            echo "---- 首次部署,clone 仓库 ----"
-            mkdir -p "$DEPLOY_PATH"
-            git clone "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git" "$DEPLOY_PATH"
-          fi
-
+          mkdir -p "$DEPLOY_PATH"
           cd "$DEPLOY_PATH"
           echo "---- 同步代码 ----"
-          # 若不是 git 仓库(旧副本/空目录),初始化并关联远程
+          # 统一处理: git 仓库则 fetch+reset,否则 init+remote+fetch+reset
           if [ ! -d ".git" ]; then
-            echo "目录非 git 仓库,初始化并关联远程(保留本地 .env/data/venv)"
+            echo "目录非 git 仓库(或旧副本),初始化并关联远程"
             git init
             git remote add origin "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git" \
               || git remote set-url origin "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git"
