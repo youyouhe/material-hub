@@ -4,8 +4,12 @@ name: CI/CD
 on:
   push:
     branches:
-      - '*'           # 所有分支都跑 check
+      - '*'
   workflow_dispatch:
+
+# 全局环境:Mac runner 的 PATH 很窄,需补上 python3.12 / node
+env:
+  PATH_PREPEND: "/usr/local/bin:$HOME/node/bin"
 
 jobs:
   # ============================================================
@@ -19,15 +23,16 @@ jobs:
           GT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
+          export PATH="$PATH_PREPEND:$PATH"
           git clone --depth 1 "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git" . \
             || git clone --depth 1 "http://10.0.0.2:3000/hem/material-hub.git" .
           echo "✓ HEAD: $(git rev-parse --short HEAD)"
+          echo "Python: $(python3 --version)"
 
       - name: 前端类型检查 (tsc --noEmit)
         run: |
           set -e
-          export PATH="$HOME/node/bin:$PATH"
-          echo "node: $(node --version)"
+          export PATH="$PATH_PREPEND:$PATH"
           cd frontend
           npm install --no-audit --no-fund
           echo "---- tsc 类型检查 ----"
@@ -37,20 +42,22 @@ jobs:
       - name: 前端构建 (vite build)
         run: |
           set -e
-          export PATH="$HOME/node/bin:$PATH"
+          export PATH="$PATH_PREPEND:$PATH"
           cd frontend
           npm run build
           echo "---- dist 产物 ----"
           ls -lh dist/ | head
 
-      - name: 后端依赖安装检查
+      - name: 后端依赖安装检查 (Python 3.12)
         run: |
           set -e
-          echo "---- 创建临时 venv ----"
-          python3 -m venv /tmp/ci-venv
+          export PATH="$PATH_PREPEND:$PATH"
+          PYBIN=$(command -v python3.12 || command -v python3.11 || command -v python3.10 || echo /usr/local/bin/python3)
+          echo "使用 Python: $PYBIN ($($PYBIN --version))"
+          $PYBIN -m venv /tmp/ci-venv
           source /tmp/ci-venv/bin/activate
-          cd backend
           pip install --upgrade pip
+          cd backend
           pip install -r requirements.txt
           echo "✓ 后端依赖全部可安装"
 
@@ -61,20 +68,16 @@ jobs:
           cd backend
           python -c "
           import importlib
-          # 核心模块导入检查(语法/依赖错误会暴露)
           mods = ['main', 'dms_models', 'dms_processor', 'dms_search', 'llm_provider',
                   'kb_database', 'kb_models', 'kb_ingest', 'kb_search', 'kb_multihop',
                   'kb_graph', 'kb_extraction', 'kb_entity_sync', 'kb_event_ingest',
                   'kb_chunking', 'kb_embedding', 'kb_asr', 'kb_docx', 'chat_tools']
           failed = []
           for m in mods:
-              try:
-                  importlib.import_module(m)
-              except Exception as e:
-                  failed.append((m, str(e)[:80]))
+              try: importlib.import_module(m)
+              except Exception as e: failed.append((m, str(e)[:80]))
           if failed:
-              for m, e in failed:
-                  print(f'  ✗ {m}: {e}')
+              for m, e in failed: print(f'  ✗ {m}: {e}')
               raise SystemExit(f'❌ {len(failed)} 个模块导入失败')
           print(f'✓ {len(mods)} 个核心模块导入成功')
           "
@@ -101,13 +104,25 @@ jobs:
       - name: 部署到本地服务器
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          GT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
+          export PATH="$PATH_PREPEND:$PATH"
+          PYBIN=$(command -v python3.12 || command -v python3.11 || command -v python3.10 || echo /usr/local/bin/python3)
+          echo "Python: $PYBIN ($($PYBIN --version))"
+
           if [ -z "$DEPLOY_PATH" ]; then
             echo "✗ 未配置 DEPLOY_PATH secret"
             exit 1
           fi
           echo "部署路径: $DEPLOY_PATH"
+
+          # 首次部署:目录不存在则 clone
+          if [ ! -d "$DEPLOY_PATH/.git" ]; then
+            echo "---- 首次部署,clone 仓库 ----"
+            mkdir -p "$DEPLOY_PATH"
+            git clone "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git" "$DEPLOY_PATH"
+          fi
 
           cd "$DEPLOY_PATH"
           echo "---- 拉取最新代码 ----"
@@ -115,18 +130,28 @@ jobs:
           git reset --hard origin/main
           echo "✓ 当前版本: $(git rev-parse --short HEAD)"
 
-          echo "---- 更新后端依赖 ----"
+          echo "---- 创建/更新后端 venv (Python 3.12) ----"
           cd backend
           if [ ! -d "venv" ]; then
-            python3 -m venv venv
+            echo "首次创建 venv"
+            $PYBIN -m venv venv
+          else
+            # 检查现有 venv 版本,若非 3.10+ 则重建
+            VENV_VER=$(venv/bin/python --version 2>&1 || echo "0.0")
+            echo "现有 venv: $VENV_VER"
+            if ! echo "$VENV_VER" | grep -qE "3\.(1[0-9]|[2-9][0-9])"; then
+              echo "venv 版本过低,用 $PYBIN 重建"
+              rm -rf venv
+              $PYBIN -m venv venv
+            fi
           fi
           source venv/bin/activate
+          pip install --upgrade pip
           pip install -r requirements.txt
           echo "✓ 后端依赖已更新"
 
           echo "---- 构建前端 ----"
           cd ../frontend
-          export PATH="$HOME/node/bin:$PATH"
           npm install --no-audit --no-fund
           npm run build
           echo "✓ 前端构建完成"
@@ -136,25 +161,28 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           set -e
+          export PATH="$PATH_PREPEND:$PATH"
           cd "$DEPLOY_PATH"
           echo "---- 重启服务 ----"
-          ./restart.sh
+          # venv 已在上一步用 Python 3.12 建好,start.sh 会直接 source 它
+          ./restart.sh || ./start.sh
           echo "✓ 服务已重启"
 
       - name: 健康检查
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
+          export PATH="$PATH_PREPEND:$PATH"
           echo "---- 等待 Backend 就绪 ----"
-          for i in $(seq 1 15); do
+          for i in $(seq 1 20); do
             if curl -sf http://localhost:8201/health > /dev/null 2>&1; then
               echo "✓ Backend healthy (第 ${i} 次检查)"
               exit 0
             fi
-            echo "  等待中... ($i/15)"
+            echo "  等待中... ($i/20)"
             sleep 2
           done
           echo "✗ Backend 健康检查失败"
-          echo "---- 最近日志 ----"
-          tail -20 "${DEPLOY_PATH:-.}/backend.log" 2>/dev/null || true
+          echo "---- 最近后端日志 ----"
+          tail -30 "${DEPLOY_PATH}/backend.log" 2>/dev/null || true
           exit 1
-        env:
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
