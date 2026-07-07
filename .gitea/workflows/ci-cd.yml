@@ -120,12 +120,14 @@ jobs:
           mkdir -p "$DEPLOY_PATH"
           cd "$DEPLOY_PATH"
           echo "---- 同步代码 ----"
-          # 统一处理: git 仓库则 fetch+reset,否则 init+remote+fetch+reset
+          REPO_URL="http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git"
           if [ ! -d ".git" ]; then
-            echo "目录非 git 仓库(或旧副本),初始化并关联远程"
+            echo "初始化 git 仓库"
             git init
-            git remote add origin "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git" \
-              || git remote set-url origin "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git"
+            git remote add origin "$REPO_URL"
+          else
+            # 每次运行需更新 token(每次 run 的 GITHUB_TOKEN 不同)
+            git remote set-url origin "$REPO_URL" 2>/dev/null || git remote add origin "$REPO_URL"
           fi
           git fetch --all
           git reset --hard origin/main
