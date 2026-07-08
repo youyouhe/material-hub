@@ -166,10 +166,12 @@ jobs:
           set -e
           export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           cd "$DEPLOY_PATH"
-          echo "---- 停止旧进程 ----"
-          pkill -f "python main.py" 2>/dev/null || true
-          pkill -f "vite" 2>/dev/null || true
-          sleep 1
+          echo "---- 停止旧进程(按端口,可靠) ----"
+          lsof -ti :8201 | xargs kill -9 2>/dev/null || true
+          lsof -ti :3100 | xargs kill -9 2>/dev/null || true
+          pkill -fi "main.py" 2>/dev/null || true
+          pkill -fi "vite" 2>/dev/null || true
+          sleep 2
           echo "---- 启动后端 (macOS nohup) ----"
           cd backend
           nohup venv/bin/python main.py > ../backend.log 2>&1 &
