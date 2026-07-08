@@ -181,6 +181,12 @@ jobs:
           echo "---- 通过 launchd 启动(完全脱离 runner 进程组) ----"
           launchctl submit -l materialhub.backend -o "$DEPLOY_PATH/backend.log" -e "$DEPLOY_PATH/backend.log" -- "$DEPLOY_PATH/run-backend.sh"
           launchctl submit -l materialhub.frontend -o "$DEPLOY_PATH/frontend.log" -e "$DEPLOY_PATH/frontend.log" -- "$DEPLOY_PATH/run-frontend.sh"
+          sleep 2
+          # 从 launchctl 取真实 PID 写入文件,让 status.sh 能正确显示
+          launchctl list | grep materialhub.backend | awk "{print \$1}" > "$DEPLOY_PATH/.backend.pid"
+          launchctl list | grep materialhub.frontend | awk "{print \$1}" > "$DEPLOY_PATH/.frontend.pid"
+          echo "后端 PID: $(cat $DEPLOY_PATH/.backend.pid)"
+          echo "前端 PID: $(cat $DEPLOY_PATH/.frontend.pid)"
           echo "✓ 服务已通过 launchd 启动"
 
       - name: 健康检查
