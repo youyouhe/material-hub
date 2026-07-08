@@ -173,18 +173,9 @@ jobs:
           lsof -ti :3100 | xargs kill -9 2>/dev/null || true
           sleep 2
 
-          echo "---- 写启动脚本 ----"
-          cat > "$DEPLOY_PATH/run-backend.sh" << EOF
-#!/bin/bash
-cd "$DEPLOY_PATH/backend"
-exec venv/bin/python main.py
-EOF
-          cat > "$DEPLOY_PATH/run-frontend.sh" << EOF
-#!/bin/bash
-cd "$DEPLOY_PATH/frontend"
-export PATH="/usr/local/bin:\$HOME/node/bin:\$PATH"
-exec npm run dev
-EOF
+          echo "---- 写启动脚本(printf 避免 heredoc 破坏 YAML) ----"
+          printf '#!/bin/bash\ncd "%s/backend"\nexec venv/bin/python main.py\n' "$DEPLOY_PATH" > "$DEPLOY_PATH/run-backend.sh"
+          printf '#!/bin/bash\ncd "%s/frontend"\nexport PATH="/usr/local/bin:$HOME/node/bin:$PATH"\nexec npm run dev\n' "$DEPLOY_PATH" > "$DEPLOY_PATH/run-frontend.sh"
           chmod +x "$DEPLOY_PATH/run-backend.sh" "$DEPLOY_PATH/run-frontend.sh"
 
           echo "---- 通过 launchd 启动(完全脱离 runner 进程组) ----"
