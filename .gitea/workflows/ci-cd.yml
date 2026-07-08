@@ -166,25 +166,31 @@ jobs:
           set -e
           export PATH="/usr/local/bin:$HOME/node/bin:$PATH"
           cd "$DEPLOY_PATH"
-          echo "---- 停止旧进程(按端口,可靠) ----"
+          echo "---- 停止旧服务(launchd 管理) ----"
+          launchctl remove materialhub.backend 2>/dev/null || true
+          launchctl remove materialhub.frontend 2>/dev/null || true
           lsof -ti :8201 | xargs kill -9 2>/dev/null || true
           lsof -ti :3100 | xargs kill -9 2>/dev/null || true
-          pkill -fi "main.py" 2>/dev/null || true
-          pkill -fi "vite" 2>/dev/null || true
           sleep 2
-          echo "---- 启动后端 (子shell孤儿化,脱离 runner 进程组) ----"
-          cd backend
-          ( nohup venv/bin/python main.py > ../backend.log 2>&1 & )
-          sleep 1
-          lsof -ti :8201 > ../.backend.pid 2>/dev/null || echo "0" > ../.backend.pid
-          echo "后端 PID: $(cat ../.backend.pid)"
-          cd ..
-          echo "---- 启动前端 (vite dev) ----"
-          cd frontend
-          export PATH="$HOME/node/bin:$PATH"
-          ( nohup npm run dev > ../frontend.log 2>&1 & )
-          sleep 1
-          echo "✓ 服务已启动"
+
+          echo "---- 写启动脚本 ----"
+          cat > "$DEPLOY_PATH/run-backend.sh" << EOF
+#!/bin/bash
+cd "$DEPLOY_PATH/backend"
+exec venv/bin/python main.py
+EOF
+          cat > "$DEPLOY_PATH/run-frontend.sh" << EOF
+#!/bin/bash
+cd "$DEPLOY_PATH/frontend"
+export PATH="/usr/local/bin:\$HOME/node/bin:\$PATH"
+exec npm run dev
+EOF
+          chmod +x "$DEPLOY_PATH/run-backend.sh" "$DEPLOY_PATH/run-frontend.sh"
+
+          echo "---- 通过 launchd 启动(完全脱离 runner 进程组) ----"
+          launchctl submit -l materialhub.backend -o "$DEPLOY_PATH/backend.log" -e "$DEPLOY_PATH/backend.log" -- "$DEPLOY_PATH/run-backend.sh"
+          launchctl submit -l materialhub.frontend -o "$DEPLOY_PATH/frontend.log" -e "$DEPLOY_PATH/frontend.log" -- "$DEPLOY_PATH/run-frontend.sh"
+          echo "✓ 服务已通过 launchd 启动"
 
       - name: 健康检查
         env:
