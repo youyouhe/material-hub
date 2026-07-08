@@ -172,20 +172,18 @@ jobs:
           pkill -fi "main.py" 2>/dev/null || true
           pkill -fi "vite" 2>/dev/null || true
           sleep 2
-          echo "---- 启动后端 (macOS nohup) ----"
+          echo "---- 启动后端 (子shell孤儿化,脱离 runner 进程组) ----"
           cd backend
-          nohup venv/bin/python main.py > ../backend.log 2>&1 &
-          BGPID=$!
-          echo "$BGPID" > ../.backend.pid
-          echo "后端 PID: $BGPID"
+          ( nohup venv/bin/python main.py > ../backend.log 2>&1 & )
+          sleep 1
+          lsof -ti :8201 > ../.backend.pid 2>/dev/null || echo "0" > ../.backend.pid
+          echo "后端 PID: $(cat ../.backend.pid)"
           cd ..
           echo "---- 启动前端 (vite dev) ----"
           cd frontend
           export PATH="$HOME/node/bin:$PATH"
-          nohup npm run dev > ../frontend.log 2>&1 &
-          FGPID=$!
-          echo "$FGPID" > ../.frontend.pid
-          echo "前端 PID: $FGPID"
+          ( nohup npm run dev > ../frontend.log 2>&1 & )
+          sleep 1
           echo "✓ 服务已启动"
 
       - name: 健康检查
