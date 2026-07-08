@@ -172,14 +172,17 @@ jobs:
           sleep 1
           echo "---- 启动后端 (macOS nohup) ----"
           cd backend
-          bash -c "source venv/bin/activate && nohup python main.py > ../backend.log 2>&1 & echo \$! > ../.backend.pid"
-          BGPID=$(cat ../.backend.pid 2>/dev/null || echo "?")
+          nohup venv/bin/python main.py > ../backend.log 2>&1 &
+          BGPID=$!
+          echo "$BGPID" > ../.backend.pid
           echo "后端 PID: $BGPID"
           cd ..
           echo "---- 启动前端 (vite dev) ----"
           cd frontend
-          bash -c "nohup npm run dev > ../frontend.log 2>&1 & echo \$! > ../.frontend.pid"
-          FGPID=$(cat ../.frontend.pid 2>/dev/null || echo "?")
+          export PATH="$HOME/node/bin:$PATH"
+          nohup npm run dev > ../frontend.log 2>&1 &
+          FGPID=$!
+          echo "$FGPID" > ../.frontend.pid
           echo "前端 PID: $FGPID"
           echo "✓ 服务已启动"
 
