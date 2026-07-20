@@ -34,7 +34,9 @@ mcp = FastMCP(
 )
 
 # Allow LAN access (disable DNS rebinding protection for IP access)
-mcp.settings.transport_security.enable_dns_rebinding_protection = False
+# 兼容 mcp 1.16+:settings.transport_security 默认 None,不能直接设其属性,需整体赋值
+from mcp.server.transport_security import TransportSecuritySettings
+mcp.settings.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
 # ============================================================
 # Context Protection: truncation helpers
