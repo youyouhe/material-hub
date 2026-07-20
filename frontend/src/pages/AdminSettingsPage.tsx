@@ -443,16 +443,28 @@ function MCPStatusCard() {
     loadTokens();
   };
 
-  const doCopy = (text: string) => {
+  const doCopy = async (text: string) => {
+    // 安全上下文（HTTPS / localhost）才可用 Clipboard API；局域网 IP 访问时为 undefined
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.success('已复制');
+        return;
+      } catch { /* 回退到 execCommand */ }
+    }
+    // 非安全上下文 fallback：textarea 必须在 execCommand 执行期间留在 DOM 中
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;z-index:99999';
     document.body.appendChild(ta);
+    ta.focus();
     ta.select();
     ta.setSelectionRange(0, 99999);
-    navigator.clipboard.writeText(text).catch(() => document.execCommand('copy'));
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
     document.body.removeChild(ta);
-    toast.success('已复制');
+    if (ok) toast.success('已复制');
+    else toast.error('复制失败，请手动选中复制');
   };
 
   return (

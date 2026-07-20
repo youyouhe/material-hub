@@ -1,9 +1,10 @@
 """System settings API endpoints."""
 
 import logging
+import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from dms_auth import require_role
@@ -129,29 +130,42 @@ async def batch_update_settings(data: BatchUpdateRequest):
     return {"updated": updated, "success": True}
 
 
+def _mcp_port() -> int:
+    """MCP SSE server 监听端口（读 MCP_PORT，默认 8202）。"""
+    try:
+        return int(os.getenv("MCP_PORT", "8202"))
+    except ValueError:
+        return 8202
+
+
+def _mcp_public_base(request: Request) -> str:
+    """对外访问基址：优先 MCP_PUBLIC_URL（反代/固定域名），否则按当前请求的 host 动态推导，
+    端口固定用 MCP_PORT。避免把 IP 写死（WSL2 等动态 IP 环境下会失效）。"""
+    public_url = os.getenv("MCP_PUBLIC_URL", "").strip()
+    if public_url:
+        return public_url.rstrip("/")
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host_hdr = (request.headers.get("x-forwarded-host")
+                or request.headers.get("host") or "localhost")
+    host = host_hdr.split(":", 1)[0]  # 丢弃前端端口，换成 MCP 端口
+    return f"{scheme}://{host}:{_mcp_port()}"
+
+
 @router.get("/mcp/status", dependencies=[require_role("admin")])
-def mcp_status():
+def mcp_status(request: Request):
     """Check MCP SSE server status via port availability."""
     import socket
+    port = _mcp_port()
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(2)
     token = get_setting("mcp_access_token") or ""
+    url = f"{_mcp_public_base(request)}/sse?token={token}"
     try:
-        s.connect(("localhost", 8202))
+        s.connect(("localhost", port))
         s.close()
-        return {
-            "running": True,
-            "url": f"http://172.26.209.253:8202/sse?token={token}",
-            "transport": "SSE",
-            "token": token,
-        }
+        return {"running": True, "url": url, "transport": "SSE", "token": token}
     except Exception:
-        return {
-            "running": False,
-            "url": f"http://172.26.209.253:8202/sse?token={token}",
-            "transport": "SSE",
-            "token": token,
-        }
+        return {"running": False, "url": url, "transport": "SSE", "token": token}
 
 
 @router.post("/mcp/start", dependencies=[require_role("admin")])
@@ -159,18 +173,20 @@ def mcp_start():
     """Start MCP SSE server as background process. Kills existing first."""
     import subprocess, os, socket
 
+    port = _mcp_port()
+
     # Check if already running
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(1)
     try:
-        s.connect(("localhost", 8202))
+        s.connect(("localhost", port))
         s.close()
-        return {"status": "already_running", "port": 8202}
+        return {"status": "already_running", "port": port}
     except Exception:
         pass
 
-    # Kill any stale process on 8202
-    result = subprocess.run(["lsof", "-t", "-i:8202"], capture_output=True, text=True)
+    # Kill any stale process on the MCP port
+    result = subprocess.run(["lsof", "-t", f"-i:{port}"], capture_output=True, text=True)
     for pid in result.stdout.strip().split("\n"):
         if pid.strip():
             try: os.kill(int(pid.strip()), 9)
@@ -187,10 +203,12 @@ def mcp_start():
         token = "mcp-sse-" + secrets.token_hex(16)
         set_setting("mcp_access_token", token, "MCP SSE server access token")
 
+    # MCP_TRANSPORT/MCP_PORT/MATERIALHUB_API_URL 以 .env 为准（缺省回退默认值）
     env = {
         **os.environ,
-        "MCP_TRANSPORT": "sse", "MCP_PORT": "8202",
-        "MATERIALHUB_API_URL": "http://localhost:8201",
+        "MCP_TRANSPORT": os.getenv("MCP_TRANSPORT", "sse"),
+        "MCP_PORT": str(port),
+        "MATERIALHUB_API_URL": os.getenv("MATERIALHUB_API_URL", "http://localhost:8201"),
     }
     with open(log_file, "w") as lf:
         subprocess.Popen(
@@ -199,15 +217,16 @@ def mcp_start():
             stdout=lf, stderr=lf,
             start_new_session=True,
         )
-    logger.info("Started MCP SSE server")
-    return {"status": "started", "port": 8202}
+    logger.info("Started MCP SSE server on port %s", port)
+    return {"status": "started", "port": port}
 
 
 @router.post("/mcp/stop", dependencies=[require_role("admin")])
 def mcp_stop():
     """Stop MCP SSE server."""
     import subprocess, os as _os
-    result = subprocess.run(["lsof", "-t", "-i:8202"], capture_output=True, text=True)
+    port = _mcp_port()
+    result = subprocess.run(["lsof", "-t", f"-i:{port}"], capture_output=True, text=True)
     pids = result.stdout.strip().split("\n")
     killed = []
     for pid in pids:
@@ -321,12 +340,12 @@ def create_mcp_token(data: McpTokenCreate):
 
 
 @router.get("/mcp/tokens/{token_id}/reveal", dependencies=[require_role("admin")])
-def reveal_mcp_token(token_id: int):
+def reveal_mcp_token(token_id: int, request: Request):
     from dms_models import DmsMcpToken
     with get_dms_session() as s:
         t = s.query(DmsMcpToken).filter(DmsMcpToken.id == token_id).first()
         if not t: raise HTTPException(status_code=404)
-        return {"url": f"http://172.26.209.253:8202/sse?token={t.sse_token}"}
+        return {"url": f"{_mcp_public_base(request)}/sse?token={t.sse_token}"}
 
 
 @router.delete("/mcp/tokens/{token_id}", dependencies=[require_role("admin")])
