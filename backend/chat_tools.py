@@ -123,7 +123,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "update_document",
-            "description": "更新文档的分类、标题、状态等。用于重新分类或修正信息。",
+            "description": "更新文档的分类、标题、状态等。用于重新分类或修正信息。注意：doc_type_code 和 folder_path 必须是系统中已存在的值，调用前请先用 list_doc_types 和 browse_folder 确认可用选项。传了不存在的 code/path 会报错。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -779,15 +779,24 @@ def _tool_update_document(doc_id: int, title: str = "", doc_type_code: str = "",
                 pass
         if doc_type_code:
             dt = s.query(DocType).filter(DocType.code == doc_type_code).first()
-            if dt:
-                doc.doc_type_id = dt.id
+            if not dt:
+                available = [d.code for d in s.query(DocType).order_by(DocType.category, DocType.name).all()]
+                return json.dumps({
+                    "error": f"doc_type_code '{doc_type_code}' 不存在",
+                    "hint": "先调用 list_doc_types 查看可用类型",
+                    "available_codes": available,
+                }, ensure_ascii=False)
+            doc.doc_type_id = dt.id
         if folder_path:
             folder = s.query(Folder).filter(
                 (Folder.path == folder_path) | (Folder.name == folder_path)
             ).first()
-            if folder:
-                doc.folder_id = folder.id
-
+            if not folder:
+                return json.dumps({
+                    "error": f"folder_path '{folder_path}' 不存在",
+                    "hint": "先调用 browse_folder 查看可用文件夹，或用 create_folder 创建",
+                }, ensure_ascii=False)
+            doc.folder_id = folder.id
         s.flush()
         return json.dumps({
             "success": True, "doc_id": doc.id, "title": doc.title, "status": doc.status,

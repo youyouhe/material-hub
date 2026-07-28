@@ -341,7 +341,7 @@ def ensure_new_types():
     with get_dms_session() as session:
         # New folders to ensure exist (parent_name -> list of child names)
         folder_additions = {
-            "公司资质": ["授权文件", "产品资料", "公司简介"],
+            "公司资质": ["授权文件", "产品资料", "公司简介", "审计报告"],
             "业绩材料": ["发票", "技术文档"],
         }
         for parent_name, children in folder_additions.items():
@@ -395,6 +395,12 @@ def ensure_new_types():
                 {"key": "doc_title", "type": "string", "label": "文档标题"},
                 {"key": "project_name", "type": "string", "label": "项目名称"},
              ]},
+            {"name": "审计报告", "code": "audit-report", "category": "company", "icon": "file-text",
+             "description": "财务审计报告、验资报告（多页复合文档，整体复用）", "metadata_schema": [
+                {"key": "report_type", "type": "string", "label": "报告类型"},
+                {"key": "period", "type": "string", "label": "报告期间"},
+                {"key": "issuer", "type": "string", "label": "出具机构"},
+            ]},
         ]
         existing_codes = {dt.code for dt in session.query(DocType).all()}
         for dt_data in new_doc_types:

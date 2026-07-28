@@ -264,6 +264,7 @@ MATERIAL_TYPE_TO_DOCTYPE = _LEGACY_TYPE_TO_DOCTYPE
 _BUILTIN_FOLDER_PATHS = {
     "business-license": "/公司资质/营业执照/",
     "qualification-cert": "/公司资质/资质证书/",
+    "audit-report": "/公司资质/审计报告/",
     "iso-cert": "/公司资质/iso认证/",
     "honor-award": "/公司资质/荣誉奖项/",
     "id-card": "/人员资质/身份证件/",
