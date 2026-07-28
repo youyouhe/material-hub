@@ -41,10 +41,13 @@ def _get_ocr_provider() -> str:
         return override
     try:
         from dms_models import get_setting
-        provider = get_setting("ocr_provider", "deepseek")
-        return provider or "deepseek"
+        provider = get_setting("ocr_provider")
+        if provider:
+            return provider
     except Exception:
-        return "deepseek"
+        pass
+    # Fall back to env, then hardcoded default
+    return os.getenv("OCR_PROVIDER", "deepseek") or "deepseek"
 
 
 def _get_bigmodel_api_key() -> Optional[str]:
@@ -57,7 +60,7 @@ def _get_bigmodel_api_key() -> Optional[str]:
             return key
     except Exception:
         pass
-    return os.getenv("BIGMODEL_API_KEY")
+    return os.getenv("BIGMODEL_API_KEY") or os.getenv("ASR_API_KEY")
 
 
 def _get_deepseek_url() -> str:
