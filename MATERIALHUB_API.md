@@ -59,7 +59,7 @@ OCR_TIMEOUT=120
 LLM_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your-api-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_MODEL=deepseek-v4-flash
 
 # 认证配置
 AUTH_SESSION_HOURS=24                  # 会话有效期（小时）

@@ -187,7 +187,7 @@ python test_smart_import.py
 LLM_PROVIDER=deepseek
 DEEPSEEK_API_KEY=sk-your-api-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
 ### 可选配置

@@ -18,7 +18,7 @@ const LLM_PROVIDERS = [
 ];
 
 const LLM_DEFAULT_MODELS: Record<string, string> = {
-  deepseek: 'deepseek-chat',
+  deepseek: 'deepseek-v4-flash',
   openrouter: 'anthropic/claude-3.5-sonnet',
   anthropic: 'claude-3-5-sonnet-20241022',
 };

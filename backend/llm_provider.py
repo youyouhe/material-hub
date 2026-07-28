@@ -159,7 +159,7 @@ class DeepSeekProvider(LLMProvider):
         self,
         api_key: str,
         base_url: str = "https://api.deepseek.com",
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-flash",
         timeout: int = 60
     ):
         self.api_key = api_key
@@ -706,7 +706,7 @@ def _get_setting(key: str, default: str = None) -> Optional[str]:
 
 # Default models per provider
 _DEFAULT_MODELS = {
-    "deepseek": "deepseek-chat",
+    "deepseek": "deepseek-v4-flash",
     "openrouter": "anthropic/claude-3.5-sonnet",
     "anthropic": "claude-3-5-sonnet-20241022",
 }
@@ -778,7 +778,7 @@ def get_llm_provider() -> LLMProvider:
         if env_model:
             model = os.getenv(env_model)
     if not model:
-        model = _DEFAULT_MODELS.get(provider_name, "deepseek-chat")
+        model = _DEFAULT_MODELS.get(provider_name, "deepseek-v4-flash")
 
     # 4. Determine base URL: DB setting > provider-specific env var > default
     base_url = _get_setting("llm_base_url")
