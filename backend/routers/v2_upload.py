@@ -141,9 +141,22 @@ async def upload_file(
         # Infer from file extension
         filename_lower = (file.filename or "").lower()
         ext_map = {
+            # Documents
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".doc": "application/msword",
+            ".pdf": "application/pdf",
+            ".txt": "text/plain",
+            # Images
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".tif": "image/tiff",
+            ".tiff": "image/tiff",
+            # Audio
             ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg",
             ".flac": "audio/flac", ".aac": "audio/aac", ".m4a": "audio/x-m4a",
             ".webm": "audio/webm",
+            # Video
             ".mp4": "video/mp4", ".mkv": "video/x-matroska",
             ".avi": "video/x-msvideo", ".mov": "video/quicktime",
         }
