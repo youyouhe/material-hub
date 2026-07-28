@@ -120,16 +120,16 @@ jobs:
           mkdir -p "$DEPLOY_PATH"
           cd "$DEPLOY_PATH"
           echo "---- 同步代码 ----"
-          REPO_URL="http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git"
+          CLEAN_URL="http://10.0.0.2:3000/hem/material-hub.git"
           if [ ! -d ".git" ]; then
             echo "初始化 git 仓库"
             git init
-            git remote add origin "$REPO_URL"
+            git remote add origin "$CLEAN_URL"
           else
-            # 每次运行需更新 token(每次 run 的 GITHUB_TOKEN 不同)
-            git remote set-url origin "$REPO_URL" 2>/dev/null || git remote add origin "$REPO_URL"
+            git remote set-url origin "$CLEAN_URL" 2>/dev/null || git remote add origin "$CLEAN_URL"
           fi
-          git fetch --all
+          # 用带 token 的 URL 直接 fetch，不写入 .git/config（避免 token 持久化到磁盘）
+          git fetch "http://x-access-token:${GT}@10.0.0.2:3000/hem/material-hub.git" 'refs/heads/*:refs/remotes/origin/*'
           git reset --hard origin/main
           echo "✓ 当前版本: $(git rev-parse --short HEAD)"
 
