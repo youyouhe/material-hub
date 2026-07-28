@@ -1,4 +1,5 @@
 import { X, Download, ExternalLink } from 'lucide-react';
+import { getToken } from '../services/auth';
 
 interface FilePreviewModalProps {
   url: string;
@@ -10,8 +11,11 @@ interface FilePreviewModalProps {
 export default function FilePreviewModal({ url, filename, mimeType, onClose }: FilePreviewModalProps) {
   const isImage = mimeType?.startsWith('image/');
   const isPdf = mimeType === 'application/pdf';
-  // Add preview=true to avoid Content-Disposition: attachment for inline display
-  const previewUrl = `${url}${url.includes('?') ? '&' : '?'}preview=true`;
+  // Append auth token to all file URLs — since C-1 fix, /api/v2/files/* requires auth.
+  // Token goes in query param (browser img/iframe/a tags can't set Authorization header).
+  const token = getToken();
+  const _withAuth = (u: string) => token ? `${u}${u.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : u;
+  const previewUrl = _withAuth(`${url}${url.includes('?') ? '&' : '?'}preview=true`);
 
   return (
     <div
@@ -28,7 +32,7 @@ export default function FilePreviewModal({ url, filename, mimeType, onClose }: F
           <h3 className="text-sm font-medium text-cp-text truncate mr-4">{filename}</h3>
           <div className="flex items-center gap-1 shrink-0">
             <a
-              href={url}
+              href={_withAuth(url)}
               download={filename}
               className="p-1.5 text-cp-dim hover:text-cp-text cp-hover rounded"
               title="下载"
@@ -36,7 +40,7 @@ export default function FilePreviewModal({ url, filename, mimeType, onClose }: F
               <Download className="w-4 h-4" />
             </a>
             <a
-              href={url}
+              href={_withAuth(url)}
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 text-cp-dim hover:text-cp-text cp-hover rounded"
@@ -70,7 +74,7 @@ export default function FilePreviewModal({ url, filename, mimeType, onClose }: F
             <div className="flex flex-col items-center justify-center py-16 text-cp-dim">
               <p className="mb-3">此文件类型不支持预览</p>
               <a
-                href={url}
+                href={_withAuth(url)}
                 download={filename}
                 className="cp-btn-primary px-4 py-2 text-sm rounded-lg inline-flex items-center gap-2"
               >

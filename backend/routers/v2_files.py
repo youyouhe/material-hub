@@ -160,6 +160,10 @@ async def serve_file(file_id: int, request: Request, preview: bool = Query(False
             str(file_path),
             media_type="application/octet-stream",
         )
-        resp.headers["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+        from urllib.parse import quote
+        # Starlette requires latin-1 encodable header values. Use ASCII fallback
+        # for filename= and RFC 5987 filename* for the real (non-ASCII) name.
+        ascii_name = safe_name.encode("ascii", "ignore").decode("ascii") or "file"
+        resp.headers["Content-Disposition"] = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(safe_name)}"
         resp.headers["X-Content-Type-Options"] = "nosniff"
         return resp
