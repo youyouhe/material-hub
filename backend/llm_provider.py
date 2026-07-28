@@ -618,8 +618,13 @@ def _openai_embed(
     payload = {
         "model": model,
         "input": texts,
-        "dimensions": int(os.getenv("EMBEDDING_DIMENSIONS", "1024")),
     }
+    # Only pass dimensions for models that support it.
+    # BAAI/bge-m3 rejects the dimensions param (fixed 1024d); Qwen3 and
+    # text-embedding-3-* accept it.
+    _model_lower = (model or "").lower()
+    if "qwen" in _model_lower or "embedding-3" in _model_lower:
+        payload["dimensions"] = int(os.getenv("EMBEDDING_DIMENSIONS", "1024"))
 
     max_retries = 3
     retry_delays = [1, 2, 3]
