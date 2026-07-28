@@ -8,6 +8,7 @@ import {
   createRequirementsFromCategory, listDocTypes,
 } from '../services/api-v2';
 import type { BidProject, BidTeamMember } from '../types/dms';
+import { bidStatusBadge } from '../utils/badge';
 import BidChecklist from '../components/BidChecklist';
 
 interface BidDetailPageProps {
@@ -19,10 +20,7 @@ interface BidDetailPageProps {
 const STATUS_LABELS: Record<string, string> = {
   planning: '筹备中', active: '进行中', submitted: '已提交', won: '已中标', lost: '未中标', cancelled: '已取消',
 };
-const STATUS_COLORS: Record<string, string> = {
-  planning: 'bg-gray-800/30 text-gray-400', active: 'bg-cp-purple/20 text-cp-purple-light', submitted: 'bg-yellow-900/30 text-yellow-400',
-  won: 'bg-green-900/30 text-green-400', lost: 'bg-red-900/30 text-red-400', cancelled: 'bg-gray-800/30 text-gray-500',
-};
+
 const TRANSITIONS: Record<string, string[]> = {
   planning: ['active'], active: ['submitted'], submitted: ['won', 'lost', 'cancelled'],
 };
@@ -132,7 +130,7 @@ export default function BidDetailPage({ bidId, userRole, onBack }: BidDetailPage
         <button onClick={onBack} className="p-1 rounded cp-hover"><ArrowLeft className="w-5 h-5 text-cp-dim" /></button>
         <Briefcase className="w-5 h-5 text-cp-cyan" />
         <h2 className="text-lg font-orbitron font-semibold text-cp-text flex-1">{bid.name}</h2>
-        <span className={clsx('px-2 py-1 text-xs rounded-full', STATUS_COLORS[bid.status])}>{STATUS_LABELS[bid.status] || bid.status}</span>
+        <span className={clsx('px-2 py-1 text-xs rounded-full', bidStatusBadge[bid.status])}>{STATUS_LABELS[bid.status] || bid.status}</span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -178,7 +176,7 @@ export default function BidDetailPage({ bidId, userRole, onBack }: BidDetailPage
               <h3 className="text-sm font-semibold text-cp-purple-light mb-2">状态变更</h3>
               <div className="flex flex-wrap gap-2">
                 {allowedTransitions.map((s) => (
-                  <button key={s} onClick={() => handleStatusChange(s)} className={clsx('px-3 py-1 text-xs rounded-full border border-cp-border', STATUS_COLORS[s])}>
+                  <button key={s} onClick={() => handleStatusChange(s)} className={clsx('px-3 py-1 text-xs rounded-full border border-cp-border', bidStatusBadge[s])}>
                     {STATUS_LABELS[s] || s}
                   </button>
                 ))}

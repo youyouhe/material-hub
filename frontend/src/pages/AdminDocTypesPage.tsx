@@ -5,17 +5,12 @@ import toast from 'react-hot-toast';
 import { listDocTypes, createDocType, updateDocType, deleteDocType, getFolderTree } from '../services/api-v2';
 import { getToken } from '../services/auth';
 import type { DocType, FolderTreeNode } from '../types/dms';
+import { categoryBadge } from '../utils/badge';
 
 const CATEGORY_LABELS: Record<string, string> = {
   company: '企业资质', personnel: '人员证件', project: '项目文档', bid: '投标文档', general: '通用文档',
 };
-const CATEGORY_COLORS: Record<string, string> = {
-  company: 'bg-blue-900/30 text-blue-400',
-  personnel: 'bg-green-900/30 text-green-400',
-  project: 'bg-yellow-900/30 text-yellow-400',
-  bid: 'bg-purple-900/30 text-purple-400',
-  general: 'bg-gray-800/30 text-gray-400',
-};
+
 
 const BASE = '/api/v2';
 
@@ -187,7 +182,7 @@ export default function AdminDocTypesPage() {
                           {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                       ) : (
-                        <span className={clsx('text-xs px-2 py-0.5 rounded-full', CATEGORY_COLORS[dt.category] || CATEGORY_COLORS.general)}>
+                        <span className={clsx('text-xs px-2 py-0.5 rounded-full', categoryBadge[dt.category] || categoryBadge.general)}>
                           {CATEGORY_LABELS[dt.category] || dt.category}
                         </span>
                       )}

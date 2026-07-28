@@ -4,9 +4,9 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { listUsers, createUser, updateUserRole, resetUserPassword, getFolderTree, setUserFolders } from '../services/api-v2';
 import type { AdminUser, FolderTreeNode } from '../types/dms';
+import { roleBadge } from '../utils/badge';
 
 const ROLE_LABELS: Record<string, string> = { admin: '管理员', editor: '编辑', viewer: '查看者' };
-const ROLE_COLORS: Record<string, string> = { admin: 'bg-cp-rose/20 text-cp-rose', editor: 'bg-cp-purple/20 text-cp-purple-light', viewer: 'bg-gray-800/30 text-gray-400' };
 
 function flattenFolders(nodes: FolderTreeNode[], depth = 0): { node: FolderTreeNode; depth: number }[] {
   const result: { node: FolderTreeNode; depth: number }[] = [];
@@ -193,7 +193,7 @@ export default function AdminUsersPage() {
                           <option value="viewer">查看者</option>
                         </select>
                       ) : (
-                        <span className={clsx('px-2 py-0.5 text-xs rounded-full cursor-pointer', ROLE_COLORS[u.role])} onClick={() => setEditingRole(u.id)}>
+                        <span className={clsx('px-2 py-0.5 text-xs rounded-full cursor-pointer', roleBadge[u.role])} onClick={() => setEditingRole(u.id)}>
                           {ROLE_LABELS[u.role] || u.role}
                           <Edit3 className="w-3 h-3 inline ml-1 opacity-50" />
                         </span>

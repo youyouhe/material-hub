@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { listDocuments, updateDocument, listDocTypes, getFolderTree } from '../services/api-v2';
 import type { DmsDocument, DmsFile } from '../types/dms';
+import { docStatusBadge, fallbackBadge } from '../utils/badge';
 import DocumentDetailPanel from '../components/DocumentDetailPanel';
 import FilePreviewModal from '../components/FilePreviewModal';
 import ReprocessModal from '../components/ReprocessModal';
@@ -104,13 +105,7 @@ export default function DocumentsPage({ folderId, selectedDocumentId, onSelectDo
     }
   };
 
-  const statusColors: Record<string, string> = {
-    active: 'bg-green-900/30 text-green-400',
-    draft: 'bg-yellow-900/30 text-yellow-400',
-    archived: 'bg-gray-800/30 text-gray-400',
-    expired: 'bg-red-900/30 text-red-400',
-    superseded: 'bg-purple-900/30 text-purple-400',
-  };
+
 
   const totalPages = Math.ceil(total / limit);
   const currentPage = Math.floor(offset / limit) + 1;
@@ -249,7 +244,7 @@ export default function DocumentsPage({ folderId, selectedDocumentId, onSelectDo
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={clsx('inline-block px-2 py-0.5 text-xs rounded-full', statusColors[doc.status] || 'bg-gray-800/30 text-gray-400')}>
+                        <span className={clsx('inline-block px-2 py-0.5 text-xs rounded-full', docStatusBadge[doc.status] || fallbackBadge)}>
                           {doc.status}
                         </span>
                       </td>

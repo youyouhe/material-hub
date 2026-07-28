@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { searchDocuments } from '../services/api-v2';
 import type { SearchResult } from '../types/dms';
+import { docStatusBadge, fallbackBadge } from '../utils/badge';
 import DocumentDetailPanel from '../components/DocumentDetailPanel';
 
 interface SearchPageProps {
@@ -53,12 +54,7 @@ export default function SearchPage({ userRole = 'viewer' }: SearchPageProps) {
     doSearch(query);
   }, [query, doSearch]);
 
-  const statusColors: Record<string, string> = {
-    active: 'bg-green-900/30 text-green-400',
-    draft: 'bg-yellow-900/30 text-yellow-400',
-    archived: 'bg-gray-800/30 text-gray-400',
-    expired: 'bg-red-900/30 text-red-400',
-  };
+
 
   return (
     <div>
@@ -108,7 +104,7 @@ export default function SearchPage({ userRole = 'viewer' }: SearchPageProps) {
                 <div className="flex items-center gap-2 mb-1">
                   <FileText className="w-4 h-4 text-cp-dim shrink-0" />
                   <span className="font-medium text-cp-text">{r.title}</span>
-                  <span className={clsx('px-2 py-0.5 text-xs rounded-full', statusColors[r.status] || 'bg-gray-800/30 text-gray-400')}>
+                  <span className={clsx('px-2 py-0.5 text-xs rounded-full', docStatusBadge[r.status] || fallbackBadge)}>
                     {r.status}
                   </span>
                 </div>

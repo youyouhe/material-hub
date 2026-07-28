@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getDocument, updateDocument, deleteDocument, lockDocument, unlockDocument, listRevisions } from '../services/api-v2';
 import type { DmsDocument, DmsFile, Revision } from '../types/dms';
+import { docStatusBadge, fallbackBadge } from '../utils/badge';
 import FilePreviewModal from './FilePreviewModal';
 import KnowledgeGraphPanel from './KnowledgeGraphPanel';
 
@@ -106,13 +107,7 @@ export default function DocumentDetailPanel({ documentId, userRole, onClose, onU
     }
   };
 
-  const statusColors: Record<string, string> = {
-    active: 'bg-green-900/30 text-green-400',
-    draft: 'bg-yellow-900/30 text-yellow-400',
-    archived: 'bg-gray-800/30 text-gray-400',
-    expired: 'bg-red-900/30 text-red-400',
-    superseded: 'bg-purple-900/30 text-purple-400',
-  };
+
 
   if (loading) {
     return (
@@ -162,7 +157,7 @@ export default function DocumentDetailPanel({ documentId, userRole, onClose, onU
 
         {/* Status & Lock & Actions */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={clsx('px-2 py-0.5 text-xs rounded-full', statusColors[doc.status] || 'bg-gray-800/30 text-gray-400')}>
+          <span className={clsx('px-2 py-0.5 text-xs rounded-full', docStatusBadge[doc.status] || fallbackBadge)}>
             {STATUS_LABELS[doc.status] || doc.status}
           </span>
           {doc.lock?.is_locked && (

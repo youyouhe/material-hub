@@ -4,22 +4,13 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { listBids, createBid } from '../services/api-v2';
 import type { BidProject } from '../types/dms';
-
+import { bidStatusBadge, fallbackBadge } from '../utils/badge';
 interface BidsPageProps {
   onOpenBid: (bidId: number) => void;
 }
 
 const STATUS_LABELS: Record<string, string> = {
   planning: '筹备中', active: '进行中', submitted: '已提交', won: '已中标', lost: '未中标', cancelled: '已取消',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  planning: 'bg-gray-800/30 text-gray-400',
-  active: 'bg-cp-purple/20 text-cp-purple-light',
-  submitted: 'bg-yellow-900/30 text-yellow-400',
-  won: 'bg-green-900/30 text-green-400',
-  lost: 'bg-red-900/30 text-red-400',
-  cancelled: 'bg-gray-800/30 text-gray-500',
 };
 
 export default function BidsPage({ onOpenBid }: BidsPageProps) {
@@ -135,8 +126,7 @@ export default function BidsPage({ onOpenBid }: BidsPageProps) {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-cp-text">{bid.name}</span>
-                      <span className={clsx('px-2 py-0.5 text-xs rounded-full', STATUS_COLORS[bid.status] || 'bg-gray-800/30 text-gray-400')}>
-                        {STATUS_LABELS[bid.status] || bid.status}
+                      <span className={clsx('px-2 py-0.5 text-xs rounded-full', bidStatusBadge[bid.status] || fallbackBadge)}>
                       </span>
                     </div>
                     {bid.deadline && <span className="text-sm text-cp-muted">截止: {bid.deadline}</span>}
