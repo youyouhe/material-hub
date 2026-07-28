@@ -111,6 +111,39 @@ export async function deleteDocument(id: number): Promise<{ success: boolean }> 
   return request(`${BASE}/documents/${id}`, { method: 'DELETE' });
 }
 
+// ── Bid Document Deconstruction ──
+
+export interface ChildDocument {
+  id: number;
+  title: string;
+  status: string;
+  nature: 'atomic' | 'composite' | 'text';
+  source_section: string;
+  folder_id: number | null;
+  doc_type_id: number | null;
+  created_at: string | null;
+}
+
+export async function deconstructDocument(id: number): Promise<{
+  status: string;
+  total: number;
+  child_doc_ids: number[];
+  atomic?: number;
+  composite?: number;
+  text?: number;
+}> {
+  return request(`${BASE}/documents/${id}/deconstruct`, { method: 'POST' });
+}
+
+export async function getChildDocuments(id: number): Promise<{
+  parent_id: number;
+  total: number;
+  counts: Record<string, number>;
+  children: ChildDocument[];
+}> {
+  return request(`${BASE}/documents/${id}/children`);
+}
+
 export async function lockDocument(id: number): Promise<{ success: boolean }> {
   return request(`${BASE}/documents/${id}/lock`, { method: 'POST' });
 }

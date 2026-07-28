@@ -1040,6 +1040,19 @@ def analyze_document(doc_id: int):
                     except Exception as e:
                         logger.warning(f"LLM classification after Word extraction failed for doc {doc_id}: {e}")
 
+                    # Bid deconstruction: if title indicates a bid package, split into children
+                    try:
+                        from bid_deconstruct import is_bid_document, deconstruct_bid_doc
+                        if is_bid_document(doc_title):
+                            logger.info(f"Doc {doc_id} detected as bid package, deconstructing...")
+                            decon_result = deconstruct_bid_doc(doc_id)
+                            if decon_result["total"] > 0:
+                                _update_processing(doc_id, "deconstructed",
+                                                  extra_meta={"_bid_deconstruction_summary": decon_result})
+                                logger.info(f"Doc {doc_id} deconstructed: {decon_result['total']} children")
+                    except Exception as e:
+                        logger.warning(f"Bid deconstruction failed for doc {doc_id} (non-fatal): {e}")
+
                     # Proceed to finalize: FTS + KB indexing
                     finalize_document(doc_id)
                     return

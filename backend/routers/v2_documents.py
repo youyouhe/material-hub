@@ -972,3 +972,98 @@ async def reprocess_documents(req: ReprocessRequest, request: Request):
         "queued_ids": queued,
         "skipped_details": skipped,
     }
+
+
+
+# ============================================================
+# Bid Document Deconstruction
+# ============================================================
+
+@router.post("/{doc_id}/deconstruct", dependencies=[require_role("editor")])
+async def deconstruct_document(doc_id: int, request: Request):
+    """Manually trigger bid deconstruction on a Word document.
+
+    Splits the document into child materials (atomic/composite/text).
+    No-op if the document has already been deconstructed.
+    """
+    with get_dms_session() as session:
+        doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
+
+        # Already deconstructed?
+        meta = doc.meta_json
+        if isinstance(meta, str):
+            import json as _json
+            meta = _json.loads(meta) if meta else {}
+        if isinstance(meta, dict) and meta.get("_bid_deconstruction"):
+            existing = meta["_bid_deconstruction"]
+            return {
+                "status": "already_deconstructed",
+                "total": existing.get("total_extracted", 0),
+                "child_doc_ids": existing.get("child_doc_ids", []),
+            }
+
+    # Run deconstruction (synchronous — caller waits)
+    from bid_deconstruct import deconstruct_bid_doc
+    try:
+        result = deconstruct_bid_doc(doc_id)
+        return {"status": "deconstructed", **result}
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{doc_id}/children")
+async def list_child_documents(doc_id: int, request: Request):
+    """List child materials extracted from a bid document.
+
+    Returns empty list if the document was not deconstructed.
+    """
+    with get_dms_session() as session:
+        parent = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
+        if not parent:
+            raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, parent)
+
+        meta = parent.meta_json
+        if isinstance(meta, str):
+            import json as _json
+            meta = _json.loads(meta) if meta else {}
+        decon = (meta or {}).get("_bid_deconstruction", {})
+        child_ids = decon.get("child_doc_ids", [])
+
+        if not child_ids:
+            return {"parent_id": doc_id, "children": [], "total": 0}
+
+        children = session.query(DmsDocument).filter(DmsDocument.id.in_(child_ids)).all()
+        # Preserve original order
+        child_map = {c.id: c for c in children}
+        ordered = [child_map[cid] for cid in child_ids if cid in child_map]
+
+        return {
+            "parent_id": doc_id,
+            "total": len(ordered),
+            "counts": decon.get("counts", {}),
+            "children": [_child_summary(c) for c in ordered],
+        }
+
+
+def _child_summary(doc: DmsDocument) -> dict:
+    """Compact summary for a child document in the children listing."""
+    import json as _json
+    meta = doc.meta_json
+    if isinstance(meta, str):
+        meta = _json.loads(meta) if meta else {}
+    nature = (meta or {}).get("_material_nature", "atomic")
+    source = (meta or {}).get("_bid_parent", {})
+    return {
+        "id": doc.id,
+        "title": doc.title,
+        "status": doc.status,
+        "nature": nature,
+        "source_section": source.get("source_section", ""),
+        "folder_id": doc.folder_id,
+        "doc_type_id": doc.doc_type_id,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+    }

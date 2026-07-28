@@ -22,6 +22,19 @@ logger = logging.getLogger("materialhub.extractor")
 MIN_IMAGE_BYTES = 5000
 ALLOWED_EXTS = {"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif"}
 
+# A section with >= this many consecutive images is treated as a COMPOSITE
+# document (audit report, contract, full proposal) rather than atomic materials.
+# Atomic materials (single license, ID card) rarely exceed 2 images.
+COMPOSITE_IMAGE_THRESHOLD = 5
+
+# For composite docs, only OCR this many leading pages to extract metadata.
+# Detailed reading is left to humans.
+COMPOSITE_OCR_SAMPLE_PAGES = 3
+
+# A text section with >= this many chars is worth extracting as a standalone
+# text material (e.g. technical proposal narrative, commitment letter body).
+TEXT_SECTION_MIN_CHARS = 200
+
 # Patterns for numbered section headers
 CHINESE_MAJOR_RE = re.compile(r"^([一二三四五六七八九十]+)、\s*(.+)")
 ARABIC_SECTION_RE = re.compile(r"^(\d+(?:\.\d+)*)[\.\．\s]\s*(.+)")
@@ -42,21 +55,46 @@ EXPIRY_PATTERNS = [
 
 
 @dataclass
-class ExtractedMaterial:
-    section: str
-    title: str
-    heading_level: int
-    image_data: bytes
-    image_ext: str
-    image_filename: str  # Actual filename saved to disk
-    expiry_date: Optional[str] = None  # ISO format YYYY-MM-DD
-
-
-@dataclass
 class SectionInfo:
+    """Heading detection result (a detected section title)."""
     section: str
     title: str
     level: int
+
+@dataclass
+class ExtractedImage:
+    """A single embedded image extracted from a docx."""
+    data: bytes
+    ext: str
+    filename: str = ""
+
+
+@dataclass
+class ExtractedMaterial:
+    """A deconstructed material unit from a bid document.
+
+    Three natures:
+      - atomic:    a single reusable certificate/license (1-2 images), deep-OCR'd
+      - composite: a multi-page doc kept whole (audit report, contract),
+                   only leading pages OCR'd for metadata
+      - text:      a pure-text section (technical narrative, commitment letter)
+    """
+    section: str
+    title: str
+    heading_level: int
+    nature: str = "atomic"  # "atomic" | "composite" | "text"
+    images: List["ExtractedImage"] = field(default_factory=list)
+    text: str = ""
+    expiry_date: Optional[str] = None
+
+
+@dataclass
+class SectionBundle:
+    """Accumulates all elements under one heading before split decision."""
+    section: str
+    title: str
+    level: int
+    images: List[ExtractedImage] = field(default_factory=list)
     text_buffer: List[str] = field(default_factory=list)
 
 
@@ -198,97 +236,129 @@ def _safe_filename(s: str) -> str:
     s = s.strip("_.")
     return s[:80]
 
+def extract_materials(docx_path: str, output_dir: str = None) -> List[ExtractedMaterial]:
+    """Deconstruct a bid .docx into atomic/composite/text material units.
 
-def extract_materials(docx_path: str, output_dir: str) -> List[ExtractedMaterial]:
+    Phase 1: single-pass scan groups body elements under detected headings
+             into SectionBundle objects (text + images accumulated per section).
+    Phase 2: each bundle is classified by image count:
+             - >= COMPOSITE_IMAGE_THRESHOLD images → composite (kept whole)
+             - 1..threshold-1 images              → atomic (one material per image)
+             - 0 images but enough text           → text material
+
+    Args:
+        docx_path: path to the .docx file
+        output_dir: if given, image bytes are also written to disk (legacy compat);
+                    if None, images stay in-memory only (caller persists them)
+
+    Returns:
+        List[ExtractedMaterial] — each has .nature, .images, .text, .expiry_date
     """
-    Linear scan through a .docx file.
-    Returns list of extracted materials (section + image pairs).
-    """
-    os.makedirs(output_dir, exist_ok=True)
     doc = Document(docx_path)
     body = doc.element.body
     elements = list(body)
 
-    current_section: Optional[SectionInfo] = None
-    results: List[ExtractedMaterial] = []
-    image_counter: dict = {}  # track per-section image count
+    # ── Phase 1: collect bundles ──
+    bundles: List[SectionBundle] = []
+    current: Optional[SectionBundle] = None
 
     for elem in elements:
-        # Check if this element is a heading
         heading = _detect_heading(elem)
         if heading is not None:
-            current_section = heading
+            if current is not None and (current.images or current.text_buffer):
+                bundles.append(current)
+            current = SectionBundle(
+                section=heading.section,
+                title=heading.title,
+                level=heading.level,
+            )
             continue
 
-        if current_section is None:
+        if current is None:
             continue
 
-        # Accumulate text for expiry date detection
+        # Accumulate paragraph text
         if elem.tag == qn("w:p"):
             text = _get_para_text(elem).strip()
             if text:
-                current_section.text_buffer.append(text)
+                current.text_buffer.append(text)
 
-        # Extract images from this element
-        images = _extract_images_from_elem(elem, doc.part)
-        if not images:
-            continue
+        # Accumulate images
+        for img_data, img_ext in _extract_images_from_elem(elem, doc.part):
+            current.images.append(ExtractedImage(data=img_data, ext=img_ext))
 
-        # Detect expiry date from accumulated text
-        combined_text = " ".join(current_section.text_buffer)
-        expiry = _detect_expiry_date(combined_text)
-
-        section_key = current_section.section or current_section.title
-        base_name = _safe_filename(
-            f"{current_section.section}-{current_section.title}"
-            if current_section.section
-            else current_section.title
-        )
-
-        for img_data, img_ext in images:
-            # Generate unique filename
-            count = image_counter.get(section_key, 0) + 1
-            image_counter[section_key] = count
-
-            if count == 1 and len(images) == 1:
-                fname = f"{base_name}.{img_ext}"
-            else:
-                fname = f"{base_name}-{count:02d}.{img_ext}"
-
-            # Deduplicate filename
-            full_path = os.path.join(output_dir, fname)
-            while os.path.exists(full_path):
-                count += 1
-                image_counter[section_key] = count
-                fname = f"{base_name}-{count:02d}.{img_ext}"
-                full_path = os.path.join(output_dir, fname)
-
-            # Save image
-            with open(full_path, "wb") as f:
-                f.write(img_data)
-
-            results.append(
-                ExtractedMaterial(
-                    section=current_section.section,
-                    title=current_section.title,
-                    heading_level=current_section.level,
-                    image_data=img_data,
-                    image_ext=img_ext,
-                    image_filename=fname,
-                    expiry_date=expiry,
-                )
-            )
-
-            logger.info(
-                "Extracted: %s (%d bytes, expiry=%s)",
-                fname,
-                len(img_data),
-                expiry or "N/A",
-            )
+    # Flush last section
+    if current is not None and (current.images or current.text_buffer):
+        bundles.append(current)
 
     logger.info(
-        "Extraction complete: %d images from %s",
-        len(results),
-        os.path.basename(docx_path),
+        "Phase 1: %d sections collected from %s",
+        len(bundles), os.path.basename(docx_path),
+    )
+
+    # ── Phase 2: classify each bundle into materials ──
+    results: List[ExtractedMaterial] = []
+    image_seq = 0  # global counter for unique filenames
+
+    for b in bundles:
+        combined_text = " ".join(b.text_buffer)
+        expiry = _detect_expiry_date(combined_text)
+        base_name = _safe_filename(
+            f"{b.section}-{b.title}" if b.section else b.title
+        )
+        n_images = len(b.images)
+
+        if n_images >= COMPOSITE_IMAGE_THRESHOLD:
+            # Composite: keep all images as ONE material, no per-image split
+            for img in b.images:
+                image_seq += 1
+                img.filename = f"{base_name}-p{image_seq:03d}.{img.ext}"
+                if output_dir:
+                    _write_image(output_dir, img)
+            results.append(ExtractedMaterial(
+                section=b.section, title=b.title, heading_level=b.level,
+                nature="composite", images=list(b.images),
+                text=combined_text[:2000], expiry_date=expiry,
+            ))
+            logger.info("Composite: %s (%d images)", b.title, n_images)
+
+        elif n_images > 0:
+            # Atomic: each image becomes its own material
+            for img in b.images:
+                image_seq += 1
+                img.filename = f"{base_name}-{image_seq:03d}.{img.ext}"
+                if output_dir:
+                    _write_image(output_dir, img)
+                results.append(ExtractedMaterial(
+                    section=b.section, title=b.title, heading_level=b.level,
+                    nature="atomic", images=[img],
+                    text="", expiry_date=expiry,
+                ))
+            logger.info("Atomic: %s (%d images → %d materials)", b.title, n_images, n_images)
+
+        elif len(combined_text) >= TEXT_SECTION_MIN_CHARS:
+            # Pure text section (no images, enough prose)
+            results.append(ExtractedMaterial(
+                section=b.section, title=b.title, heading_level=b.level,
+                nature="text", images=[], text=combined_text, expiry_date=expiry,
+            ))
+            logger.info("Text: %s (%d chars)", b.title, len(combined_text))
+
+    logger.info(
+        "Phase 2: %d materials from %s (atomic/composite/text split)",
+        len(results), os.path.basename(docx_path),
     )
     return results
+
+
+def _write_image(output_dir: str, img: "ExtractedImage") -> None:
+    """Write an ExtractedImage to disk (helper for legacy output_dir mode)."""
+    os.makedirs(output_dir, exist_ok=True)
+    full_path = os.path.join(output_dir, img.filename)
+    # Deduplicate filename
+    while os.path.exists(full_path):
+        image_seq = int(img.filename.rsplit("-", 1)[-1].split(".")[0].replace("p", "")) + 1
+        img.filename = f"{img.filename.rsplit('-', 1)[0]}-p{image_seq:03d}.{img.ext}"
+        full_path = os.path.join(output_dir, img.filename)
+    with open(full_path, "wb") as f:
+        f.write(img.data)
