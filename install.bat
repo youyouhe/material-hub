@@ -127,13 +127,13 @@ if not exist "%BACKEND_DIR%\data\uploads" mkdir "%BACKEND_DIR%\data\uploads"
 if not exist "%BACKEND_DIR%\data\images" mkdir "%BACKEND_DIR%\data\images"
 echo   [OK] 数据目录已创建
 
-:: .env 文件
-if not exist "%BACKEND_DIR%\.env" (
-    copy "%PROJECT_ROOT%.env.example" "%BACKEND_DIR%\.env" >nul 2>&1
-    if exist "%BACKEND_DIR%\.env" (
-        echo   [OK] .env 配置文件已创建 (请编辑 backend\.env 配置 API 密钥)
+::: .env 文件（项目根目录，与 main.py 的读取路径一致）
+if not exist "%PROJECT_ROOT%\.env" (
+    copy "%PROJECT_ROOT%.env.example" "%PROJECT_ROOT%\.env" >nul 2>&1
+    if exist "%PROJECT_ROOT%\.env" (
+        echo   [OK] .env 配置文件已创建 (请编辑 .env 配置 API 密钥)
     ) else (
-        echo   [警告] .env 创建失败，请手动复制 .env.example 到 backend\.env
+        echo   [警告] .env 创建失败，请手动复制 .env.example 到项目根目录
     )
 ) else (
     echo   .env 配置文件已存在
