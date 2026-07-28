@@ -33,11 +33,21 @@ logging.basicConfig(
 
 logger = logging.getLogger("materialhub.main")
 
-app = FastAPI(title="MaterialHub", version="1.0.0")
+ENABLE_DOCS = os.getenv("ENABLE_DOCS", "false").lower() == "true"
+app = FastAPI(
+    title="MaterialHub", version="1.0.0",
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None,
+)
 
+# CORS: env-driven allowlist. Default covers local dev (Vite 5173/3100/3101).
+# Production: set ALLOWED_ORIGINS=https://your-domain.com in .env
+_default_origins = "http://localhost:5173,http://localhost:3100,http://localhost:3101"
+_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -75,19 +85,12 @@ logger.info("✅ 信号处理器已注册: SIGTERM, SIGINT, SIGHUP")
 async def auth_middleware(request: Request, call_next):
     """Authentication middleware to protect API endpoints."""
     # Exempt paths that don't require authentication
-    exempt_paths = ["/api/auth/login", "/api/v2/auth/login", "/health", "/docs", "/openapi.json", "/redoc", "/api/v2/settings/mcp/resolve"]
+    exempt_paths = ["/api/auth/login", "/api/v2/auth/login", "/health", "/api/v2/settings/mcp/resolve"]
 
     if request.url.path in exempt_paths:
         return await call_next(request)
 
-    # Exempt static file serving (images, thumbnails)
-    # Users must still be logged in to access the web app and see image URLs
-    if request.url.path.startswith("/api/files/") or request.url.path.startswith("/api/v2/files/"):
-        return await call_next(request)
-    if "/page/" in request.url.path and request.url.path.endswith("/thumb"):
-        return await call_next(request)
-
-    # Protect all /api/* paths except auth/login and files
+    # Protect all /api/* paths except auth/login
     if request.url.path.startswith("/api/"):
         authorization = request.headers.get("authorization")
 

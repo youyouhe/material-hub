@@ -185,6 +185,13 @@ async def import_system(file: UploadFile = File(...)):
 
                 target = DATA_DIR.parent / member  # materials.db goes to project root data dir
 
+                # Zip-slip protection: reject entries that escape DATA_DIR.parent
+                try:
+                    target.resolve().relative_to((DATA_DIR.parent).resolve())
+                except ValueError:
+                    logger.warning("Skipping archive member (path traversal): %s", member)
+                    continue
+
                 # Create parent directories
                 target.parent.mkdir(parents=True, exist_ok=True)
 

@@ -16,10 +16,11 @@ import logging
 import re
 from typing import Optional, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from database import get_session, Company, Person, Material
-from dms_models import get_dms_session, Entity
+from dms_models import get_dms_session, Entity, DmsDocument, DocumentEntity
+from dms_auth import get_accessible_folder_ids
 
 logger = logging.getLogger("materialhub.routers.v2_complete")
 
@@ -72,15 +73,48 @@ def _entity_attrs(entity: Optional[Entity]) -> dict:
         return {}
 
 
+def _visible_legacy_material_ids(dms, entity_id: int, allowed_folders):
+    """Return the set of legacy Material.id values visible to the caller.
+
+    A legacy material is visible only when its migrated DMS document is linked
+    to *entity_id* AND (for folder-restricted callers) resides in an accessible
+    folder. Returns None when the caller is unrestricted, so the caller skips
+    filtering entirely.
+    """
+    if allowed_folders is None:
+        return None
+    rows = (
+        dms.query(DmsDocument.meta_json)
+        .join(DocumentEntity, DocumentEntity.document_id == DmsDocument.id)
+        .filter(DocumentEntity.entity_id == entity_id)
+        .filter(DmsDocument.folder_id.in_(allowed_folders))
+        .all()
+    )
+    visible: set[int] = set()
+    for (meta_raw,) in rows:
+        if not meta_raw:
+            continue
+        try:
+            meta = json.loads(meta_raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        legacy_id = meta.get("_legacy_id") if isinstance(meta, dict) else None
+        if isinstance(legacy_id, int):
+            visible.add(legacy_id)
+    return visible
+
+
 @router.get("/companies/{entity_id}/complete")
-async def get_company_complete(entity_id: int):
+async def get_company_complete(entity_id: int, request: Request):
     """公司完整画像：实体 + 工商信息（法人/地址/信用代码）+ 员工 + 材料 + 统计。"""
+    allowed_folders = get_accessible_folder_ids(request)
     with get_dms_session() as dms:
         entity = dms.query(Entity).filter(Entity.id == entity_id).first()
         if not entity or entity.entity_type != "org":
             raise HTTPException(status_code=404, detail=f"公司实体不存在: {entity_id}")
         entity_attrs = _entity_attrs(entity)
         entity_name = entity.name
+        visible_ids = _visible_legacy_material_ids(dms, entity_id, allowed_folders)
 
         # 人员实体（按名字补充 id_number 等属性）
         person_entities = {
@@ -112,6 +146,8 @@ async def get_company_complete(entity_id: int):
                 .order_by(Material.id)
                 .all()
             )
+            if visible_ids is not None:
+                materials = [m for m in materials if m.id in visible_ids]
             for m in materials:
                 if m.material_type == "license" and m.extracted_json:
                     try:
@@ -171,14 +207,16 @@ async def get_company_complete(entity_id: int):
 
 
 @router.get("/persons/{entity_id}/complete")
-async def get_person_complete(entity_id: int):
+async def get_person_complete(entity_id: int, request: Request):
     """人员完整画像：实体 + 所属公司 + 证书 + 材料。"""
+    allowed_folders = get_accessible_folder_ids(request)
     with get_dms_session() as dms:
         entity = dms.query(Entity).filter(Entity.id == entity_id).first()
         if not entity or entity.entity_type != "person":
             raise HTTPException(status_code=404, detail=f"人员实体不存在: {entity_id}")
         entity_attrs = _entity_attrs(entity)
         entity_name = entity.name
+        visible_ids = _visible_legacy_material_ids(dms, entity_id, allowed_folders)
 
     with get_session() as session:
         person = None
@@ -201,6 +239,8 @@ async def get_person_complete(entity_id: int):
                 .order_by(Material.id)
                 .all()
             )
+            if visible_ids is not None:
+                materials = [m for m in materials if m.id in visible_ids]
 
         attrs = dict(entity_attrs)
         if person:

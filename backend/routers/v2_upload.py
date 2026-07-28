@@ -49,6 +49,18 @@ ALLOWED_MIME_TYPES = {
 }
 
 
+MAX_UPLOAD_SIZE = 200 * 1024 * 1024  # 200 MB per file
+
+
+def _sanitize_upload_filename(raw: str) -> str:
+    """Strip path components, null bytes, and traversal segments from an uploaded filename."""
+    name = os.path.basename(raw or "")
+    name = name.replace("\x00", "")
+    if not name or name in (".", "..") or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="无效的文件名")
+    return name
+
+
 def _update_processing_status(doc_id: int, status: str, error: str = None):
     """Update the _processing key in document meta_json."""
     from datetime import datetime
@@ -73,11 +85,14 @@ def _update_processing_status(doc_id: int, status: str, error: str = None):
 
 
 @router.post("/check-hash", dependencies=[require_role("editor")])
-async def check_file_hash(file: UploadFile = File(...)):
+async def check_file_hash(file: UploadFile = File(...), request: Request = None):
     """Check if a file with the same hash already exists.
 
     Returns duplicate info if found, or empty result if no duplicate.
     """
+    cl = int(request.headers.get("content-length", 0))
+    if cl and cl > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="文件过大，单文件上限 200MB")
     content = await file.read()
     file_hash = hashlib.md5(content).hexdigest()
 
@@ -143,6 +158,10 @@ async def upload_file(
                    f"Allowed: PDF, JPEG, PNG, TIFF, DOCX, DOC, MP3, WAV, MP4",
         )
 
+    # Enforce upload size limit (defense against memory/disk DoS)
+    cl = int(request.headers.get("content-length", 0))
+    if cl and cl > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="文件过大，单文件上限 200MB")
     # Read file content
     content = await file.read()
     file_hash = hashlib.md5(content).hexdigest()
@@ -175,7 +194,7 @@ async def upload_file(
                 )
 
     # Derive title from filename if not provided
-    original_filename = file.filename or "untitled"
+    original_filename = _sanitize_upload_filename(file.filename)
     if not title:
         title = Path(original_filename).stem
 
@@ -220,6 +239,8 @@ async def upload_file(
         safe_name = f"{file_hash[:8]}_{original_filename}"
         storage_path = f"dms_files/{doc.id}/{rev.id}/{safe_name}"
         full_path = DATA_DIR / storage_path
+        if not str(full_path.resolve()).startswith(str(DATA_DIR.resolve())):
+            raise HTTPException(status_code=403, detail="非法路径")
 
         with open(full_path, "wb") as f:
             f.write(content)
@@ -850,6 +871,10 @@ async def batch_upload(
     results = []
     for file in files:
         try:
+            # Enforce upload size limit (defense against memory/disk DoS)
+            cl = int(request.headers.get("content-length", 0))
+            if cl and cl > MAX_UPLOAD_SIZE:
+                raise HTTPException(status_code=413, detail="文件过大，单文件上限 200MB")
             # Read file content
             content = await file.read()
             file_hash = hashlib.md5(content).hexdigest()
@@ -864,7 +889,7 @@ async def batch_upload(
                 })
                 continue
 
-            original_filename = file.filename or "untitled"
+            original_filename = _sanitize_upload_filename(file.filename)
             title = Path(original_filename).stem
 
             # Duplicate check
@@ -906,6 +931,8 @@ async def batch_upload(
                 safe_name = f"{file_hash[:8]}_{original_filename}"
                 storage_path = f"dms_files/{doc.id}/{rev.id}/{safe_name}"
                 full_path = DATA_DIR / storage_path
+                if not str(full_path.resolve()).startswith(str(DATA_DIR.resolve())):
+                    raise HTTPException(status_code=403, detail="非法路径")
                 with open(full_path, "wb") as f:
                     f.write(content)
 

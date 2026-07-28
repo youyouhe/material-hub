@@ -10,7 +10,7 @@ from dms_models import (
     get_dms_session, DmsDocument, DocumentEntity, DocumentTag, Folder, DocType,
 )
 from dms_search import search_index, rebuild_index
-from dms_auth import get_accessible_folder_ids
+from dms_auth import get_accessible_folder_ids, require_role
 
 logger = logging.getLogger("materialhub.routers.v2_search")
 
@@ -214,7 +214,7 @@ def _apply_facets(query, folder_id, doc_type_id, entity_id, tag_id,
     return query
 
 
-@router.post("/rebuild-index")
+@router.post("/rebuild-index", dependencies=[require_role("admin")])
 async def rebuild_search_index():
     """Rebuild the entire FTS search index from all active/draft documents."""
     count = rebuild_index()

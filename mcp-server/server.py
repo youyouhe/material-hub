@@ -1242,9 +1242,9 @@ if __name__ == "__main__":
                 # SSE connect — resolve token and cache agent
                 try:
                     async with _httpx.AsyncClient(timeout=5) as c:
-                        resp = await c.get(
+                        resp = await c.post(
                             f"{API_BASE_URL}/api/v2/settings/mcp/resolve",
-                            params={"token": token},
+                            json={"token": token},
                         )
                         if resp.status_code == 200:
                             data = resp.json()

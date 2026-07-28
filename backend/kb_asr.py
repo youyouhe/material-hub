@@ -17,7 +17,7 @@ logger = logging.getLogger("materialhub.kb_asr")
 
 # ── ASR configuration ──
 ASR_ENABLED = os.getenv("ASR_ENABLED", "true").lower() == "true"
-ASR_API_KEY = os.getenv("ASR_API_KEY", "b07f119aaa41487a914d6b0d4dedd239.EAJ6rekpFjyZEWoA")
+ASR_API_KEY = os.getenv("ASR_API_KEY", "")
 ASR_API_URL = os.getenv("ASR_API_URL", "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions")
 ASR_MODEL = os.getenv("ASR_MODEL", "glm-asr-2512")
 

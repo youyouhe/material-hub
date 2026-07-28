@@ -49,7 +49,7 @@ def _generate_token() -> str:
 # Endpoints
 # ============================================================
 
-@router.get("/", dependencies=[require_role("editor")])
+@router.get("/", dependencies=[require_role("admin")])
 async def list_agents():
     """List all API agents."""
     with get_dms_session() as session:
@@ -57,7 +57,7 @@ async def list_agents():
         return {"agents": [a.to_safe_dict() for a in agents]}
 
 
-@router.post("/", dependencies=[require_role("editor")])
+@router.post("/", dependencies=[require_role("admin")])
 async def create_agent(data: CreateAgentRequest):
     """Create a new API agent and return the generated token."""
     if data.role not in VALID_ROLES:
@@ -89,7 +89,7 @@ async def create_agent(data: CreateAgentRequest):
         return result
 
 
-@router.get("/{agent_id}", dependencies=[require_role("editor")])
+@router.get("/{agent_id}", dependencies=[require_role("admin")])
 async def get_agent(agent_id: int):
     """Get agent details (token preview only)."""
     with get_dms_session() as session:
@@ -99,7 +99,7 @@ async def get_agent(agent_id: int):
         return agent.to_safe_dict()
 
 
-@router.put("/{agent_id}", dependencies=[require_role("editor")])
+@router.put("/{agent_id}", dependencies=[require_role("admin")])
 async def update_agent(agent_id: int, data: UpdateAgentRequest):
     """Update agent name, role, description, or active status."""
     with get_dms_session() as session:
@@ -122,7 +122,7 @@ async def update_agent(agent_id: int, data: UpdateAgentRequest):
         return agent.to_safe_dict()
 
 
-@router.delete("/{agent_id}", dependencies=[require_role("editor")])
+@router.delete("/{agent_id}", dependencies=[require_role("admin")])
 async def delete_agent(agent_id: int):
     """Delete an API agent."""
     with get_dms_session() as session:
@@ -136,7 +136,7 @@ async def delete_agent(agent_id: int):
         return {"success": True}
 
 
-@router.post("/{agent_id}/regenerate-token", dependencies=[require_role("editor")])
+@router.post("/{agent_id}/regenerate-token", dependencies=[require_role("admin")])
 async def regenerate_token(agent_id: int):
     """Regenerate the token for an agent. Returns the new full token."""
     with get_dms_session() as session:
@@ -150,7 +150,7 @@ async def regenerate_token(agent_id: int):
         return {"token": agent.token}
 
 
-@router.put("/{agent_id}/folders", dependencies=[require_role("editor")])
+@router.put("/{agent_id}/folders", dependencies=[require_role("admin")])
 async def set_agent_folders(agent_id: int, data: SetAgentFoldersRequest):
     """Replace the full set of folder access for an agent."""
     with get_dms_session() as session:

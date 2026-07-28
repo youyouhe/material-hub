@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, Request
 from sqlalchemy import func, case
 
 from dms_models import get_dms_session, DmsDocument, DocType
-from dms_auth import get_accessible_folder_ids
+from dms_auth import get_accessible_folder_ids, require_role
 
 logger = logging.getLogger("materialhub.routers.v2_expiry")
 
@@ -173,7 +173,7 @@ async def list_expired(
         }
 
 
-@router.post("/update-status")
+@router.post("/update-status", dependencies=[require_role("admin")])
 async def update_expired_status():
     """Batch transition active documents with past expiry_date to 'expired' status."""
     today = date.today()

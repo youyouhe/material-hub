@@ -1,10 +1,12 @@
 """System settings API endpoints."""
 
+import ipaddress
 import logging
 import os
 from typing import Optional
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Body
 from pydantic import BaseModel
 
 from dms_auth import require_role
@@ -63,6 +65,27 @@ MANAGED_SETTINGS = {
 }
 
 SENSITIVE_KEYS = {k for k, v in MANAGED_SETTINGS.items() if v.get("sensitive")}
+
+# Settings whose value is a service URL that must not point to private/internal hosts
+URL_SETTINGS = {"ocr_service_url", "llm_base_url", "embedding_base_url", "asr_api_url"}
+
+
+def _validate_service_url(url: str) -> None:
+    """Reject URLs pointing to private, loopback, link-local, or reserved addresses."""
+    if not url:
+        return
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="URL 必须是 http 或 https 协议")
+    hostname = parsed.hostname or ""
+    if not hostname:
+        raise HTTPException(status_code=400, detail="URL 缺少主机名")
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise HTTPException(status_code=400, detail="URL 不能指向内网/回环/保留地址")
+    except ValueError:
+        pass  # hostname is a domain, not a literal IP — allow
 
 
 class UpdateSettingRequest(BaseModel):
@@ -241,8 +264,8 @@ def mcp_stop():
 
 
 # Public (no auth) — called by MCP server to resolve token→agent
-@router.get("/mcp/resolve")
-def resolve_mcp_token(token: str = Query(...)):
+@router.post("/mcp/resolve")
+def resolve_mcp_token(token: str = Body(..., embed=True)):
     """Resolve an MCP SSE token to its agent's API key. Called by MCP server."""
     from dms_models import DmsMcpToken
     with get_dms_session() as s:
@@ -416,6 +439,8 @@ async def update_setting(key: str, data: UpdateSettingRequest):
             raise HTTPException(status_code=400, detail="Invalid OCR provider")
         if key == "llm_provider" and data.value not in ("deepseek", "openrouter", "anthropic"):
             raise HTTPException(status_code=400, detail="Invalid LLM provider")
+        if key in URL_SETTINGS:
+            _validate_service_url(data.value)
     desc = data.description or (MANAGED_SETTINGS.get(key, {}).get("description") if key in MANAGED_SETTINGS else None)
     set_setting(key, data.value, desc)
     return {"key": key, "value": data.value if key not in SENSITIVE_KEYS else "***", "success": True}

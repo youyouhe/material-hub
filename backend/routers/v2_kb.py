@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query, Request
 
-from dms_auth import get_accessible_folder_ids
+from dms_auth import get_accessible_folder_ids, require_role
 from kb_search import vector_search, hybrid_search
 from kb_ingest import reingest_all_documents, get_kb_status
 from kb_entity_sync import sync_entities_to_kb, sync_folders_to_kb
@@ -103,23 +103,13 @@ async def kb_multihop_search(
     return response
 
 
-@router.post("/reindex")
-async def kb_reindex(request: Request):
+@router.post("/reindex", dependencies=[require_role("admin")])
+async def kb_reindex():
     """Rebuild all KB indexes for active documents (admin only).
 
     Processes: chunks → embeddings → vector index.
     Documents that already have KB indexes are re-indexed.
     """
-    # Only admin can trigger reindex
-    user_role = getattr(request.state, "user_role", None)
-    if user_role != "admin":
-        return {
-            "error": {
-                "code": "FORBIDDEN",
-                "message": "Only admin can trigger KB reindex"
-            }
-        }, 403
-
     result = reingest_all_documents()
     return {"reindex": result}
 
@@ -130,7 +120,7 @@ async def kb_status():
     return get_kb_status()
 
 
-@router.post("/sync")
+@router.post("/sync", dependencies=[require_role("admin")])
 async def kb_sync(request: Request):
     """Sync entities and folders from SQLite to PostgreSQL KB.
 

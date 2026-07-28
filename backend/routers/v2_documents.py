@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
 from pydantic import BaseModel
 
-from dms_auth import require_role, get_current_user_id, get_accessible_folder_ids
+from dms_auth import require_role, get_current_user_id, get_accessible_folder_ids, assert_doc_folder_access
 from dms_audit import log_audit
 
 from dms_models import (
@@ -27,6 +27,14 @@ router = APIRouter(prefix="/api/v2/documents", tags=["dms-documents"])
 DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 
 LOCK_TIMEOUT_MINUTES = 30
+
+def _sanitize_upload_filename(raw: str) -> str:
+    """Strip path components, null bytes, and traversal segments from an uploaded filename."""
+    name = os.path.basename(raw or "")
+    name = name.replace("\x00", "")
+    if not name or name in (".", "..") or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="无效的文件名")
+    return name
 
 
 def _is_locked(doc) -> bool:
@@ -300,6 +308,7 @@ async def update_document(doc_id: int, data: DocumentUpdate, request: Request):
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
 
         # Lock check: reject if locked by another user
         _check_lock(doc, get_current_user_id(request))
@@ -370,6 +379,7 @@ async def delete_document(doc_id: int, request: Request):
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
 
         # Delete physical files
         for rev in doc.revisions:
@@ -400,6 +410,7 @@ async def lock_document(doc_id: int, request: Request):
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
 
         if _is_locked(doc) and doc.locked_by != user_id:
             raise HTTPException(status_code=409, detail="Document is locked by another user")
@@ -424,6 +435,7 @@ async def unlock_document(doc_id: int, request: Request):
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
 
         if not _is_locked(doc):
             return {"success": True, "message": "Document was not locked"}
@@ -447,12 +459,13 @@ async def unlock_document(doc_id: int, request: Request):
 # ============================================================
 
 @router.get("/{doc_id}/revisions/")
-async def list_revisions(doc_id: int):
+async def list_revisions(doc_id: int, request: Request):
     """List all revisions for a document."""
     with get_dms_session() as session:
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
 
         revisions = session.query(Revision).filter(
             Revision.document_id == doc_id
@@ -468,6 +481,7 @@ async def create_revision(doc_id: int, data: RevisionCreate, request: Request):
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
 
         # Get max version number
         max_ver = session.query(Revision.version_number).filter(
@@ -493,9 +507,14 @@ async def create_revision(doc_id: int, data: RevisionCreate, request: Request):
 
 
 @router.get("/{doc_id}/revisions/{rev_id}")
-async def get_revision(doc_id: int, rev_id: int):
+async def get_revision(doc_id: int, rev_id: int, request: Request):
     """Get a specific revision with its files."""
     with get_dms_session() as session:
+        doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
+
         rev = session.query(Revision).filter(
             Revision.id == rev_id,
             Revision.document_id == doc_id,
@@ -510,12 +529,13 @@ async def get_revision(doc_id: int, rev_id: int):
 # ============================================================
 
 @router.post("/{doc_id}/entities/", dependencies=[require_role("editor")])
-async def link_entity(doc_id: int, data: EntityLinkCreate):
+async def link_entity(doc_id: int, data: EntityLinkCreate, request: Request):
     """Link an entity to a document with a role."""
     with get_dms_session() as session:
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
 
         entity = session.query(Entity).filter(Entity.id == data.entity_id).first()
         if not entity:
@@ -541,9 +561,13 @@ async def link_entity(doc_id: int, data: EntityLinkCreate):
 
 
 @router.delete("/{doc_id}/entities/{entity_id}", dependencies=[require_role("editor")])
-async def unlink_entity(doc_id: int, entity_id: int):
+async def unlink_entity(doc_id: int, entity_id: int, request: Request):
     """Remove entity-document association."""
     with get_dms_session() as session:
+        doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
         links = session.query(DocumentEntity).filter(
             DocumentEntity.document_id == doc_id,
             DocumentEntity.entity_id == entity_id,
@@ -561,12 +585,13 @@ async def unlink_entity(doc_id: int, entity_id: int):
 # ============================================================
 
 @router.post("/{doc_id}/tags/", dependencies=[require_role("editor")])
-async def add_tag(doc_id: int, data: TagLinkCreate):
+async def add_tag(doc_id: int, data: TagLinkCreate, request: Request):
     """Add a tag to a document."""
     with get_dms_session() as session:
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
 
         tag = session.query(Tag).filter(Tag.id == data.tag_id).first()
         if not tag:
@@ -586,9 +611,13 @@ async def add_tag(doc_id: int, data: TagLinkCreate):
 
 
 @router.delete("/{doc_id}/tags/{tag_id}", dependencies=[require_role("editor")])
-async def remove_tag(doc_id: int, tag_id: int):
+async def remove_tag(doc_id: int, tag_id: int, request: Request):
     """Remove a tag from a document."""
     with get_dms_session() as session:
+        doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        assert_doc_folder_access(request, doc)
         link = session.query(DocumentTag).filter(
             DocumentTag.document_id == doc_id,
             DocumentTag.tag_id == tag_id,
@@ -795,13 +824,17 @@ async def import_document(
         session.add(rev)
         session.flush()
 
-        # Store file
-        original_filename = file.filename or "untitled"
+        # Store file (sanitize filename to prevent path traversal - H-4)
+        original_filename = "untitled"
+        if file.filename:
+            original_filename = _sanitize_upload_filename(file.filename)
         rev_dir = DMS_FILES_DIR / str(doc.id) / str(rev.id)
         rev_dir.mkdir(parents=True, exist_ok=True)
         safe_name = f"{file_hash[:8]}_{original_filename}"
         storage_path = f"dms_files/{doc.id}/{rev.id}/{safe_name}"
         full_path = DATA_DIR / storage_path
+        if not str(full_path.resolve()).startswith(str(DATA_DIR.resolve())):
+            raise HTTPException(status_code=403, detail="非法路径")
         with open(full_path, "wb") as f:
             f.write(content)
 

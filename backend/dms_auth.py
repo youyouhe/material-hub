@@ -145,6 +145,16 @@ def get_accessible_folder_ids(request: Request) -> list[int] | None:
     with get_dms_session() as session:
         return _expand_folder_ids(session, list(perms.keys()))
 
+def assert_doc_folder_access(request: Request, doc) -> None:
+    """Raise 403 if the current user/agent cannot access the document's folder.
+
+    Call this after fetching a document by ID in mutation/read endpoints to
+    enforce folder-level access control (prevents IDOR via doc_id enumeration).
+    """
+    allowed = get_accessible_folder_ids(request)
+    if allowed is not None and doc.folder_id not in allowed:
+        raise HTTPException(status_code=403, detail="无权访问该文档")
+
 
 def get_folder_permission(request: Request, folder_id: int) -> str:
     """Get the current user's effective permission on a specific folder.
