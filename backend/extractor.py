@@ -237,14 +237,15 @@ def _safe_filename(s: str) -> str:
     return s[:80]
 
 def extract_materials(docx_path: str, output_dir: str = None) -> List[ExtractedMaterial]:
-    """Deconstruct a bid .docx into atomic/composite/text material units.
+    """Deconstruct a bid .docx into reusable material units.
 
     Phase 1: single-pass scan groups body elements under detected headings
              into SectionBundle objects (text + images accumulated per section).
     Phase 2: each bundle is classified by image count:
              - >= COMPOSITE_IMAGE_THRESHOLD images → composite (kept whole)
              - 1..threshold-1 images              → atomic (one material per image)
-             - 0 images but enough text           → text material
+             - 0 images                           → skipped (project-specific text,
+                                                    not reusable; stays in parent)
 
     Args:
         docx_path: path to the .docx file
@@ -252,7 +253,7 @@ def extract_materials(docx_path: str, output_dir: str = None) -> List[ExtractedM
                     if None, images stay in-memory only (caller persists them)
 
     Returns:
-        List[ExtractedMaterial] — each has .nature, .images, .text, .expiry_date
+        List[ExtractedMaterial] — each has .nature (atomic|composite), .images, .expiry_date
     """
     doc = Document(docx_path)
     body = doc.element.body
@@ -336,16 +337,13 @@ def extract_materials(docx_path: str, output_dir: str = None) -> List[ExtractedM
                 ))
             logger.info("Atomic: %s (%d images → %d materials)", b.title, n_images, n_images)
 
-        elif len(combined_text) >= TEXT_SECTION_MIN_CHARS:
-            # Pure text section (no images, enough prose)
-            results.append(ExtractedMaterial(
-                section=b.section, title=b.title, heading_level=b.level,
-                nature="text", images=[], text=combined_text, expiry_date=expiry,
-            ))
-            logger.info("Text: %s (%d chars)", b.title, len(combined_text))
+        # Pure text sections (no images) are NOT extracted as separate materials.
+        # They are project-specific content (technical proposals, declarations,
+        # commitment letters) that cannot be reused across bids. The full text
+        # remains in the parent document for FTS/KB search.
 
     logger.info(
-        "Phase 2: %d materials from %s (atomic/composite/text split)",
+        "Phase 2: %d materials from %s (atomic/composite, text sections skipped)",
         len(results), os.path.basename(docx_path),
     )
     return results

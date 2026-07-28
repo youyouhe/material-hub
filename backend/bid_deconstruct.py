@@ -229,13 +229,9 @@ def _process_child(child_doc_id: int) -> None:
     _update_processing(child_doc_id, "processing")
 
     try:
-        if nature == "text":
-            # Text material: use stored text directly
-            text = meta.get("_extracted_text", "")
-            if text:
-                _classify_and_link(child_doc_id, text[:4000], doc_title)
-
-        elif nature == "atomic":
+        # Note: text sections are no longer extracted by the extractor (they are
+        # project-specific, not reusable). Only atomic/composite reach here.
+        if nature == "atomic":
             # Atomic: OCR every image fully, concatenate
             all_text = []
             for storage_path, filename in file_paths:
