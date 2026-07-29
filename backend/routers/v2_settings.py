@@ -395,28 +395,57 @@ def toggle_mcp_token(token_id: int):
 
 @router.post("/llm/test", dependencies=[require_role("admin")])
 async def test_llm():
-    """Test the current LLM configuration."""
+    """Test the current LLM configuration with a real chat call.
+
+    This is a full business-level test: it sends an actual chat completion
+    request using the configured key + model + base_url. 'Available' means
+    the API accepted the key and returned a valid response.
+    """
+    import os
+    from llm_provider import get_llm_provider, _get_setting
+    provider_name = get_setting("llm_provider", "deepseek") or "deepseek"
+
+    # Determine which key is actually in use (DB > env)
+    db_key = get_setting("llm_api_key")
+    _ENV_KEY_MAP = {"deepseek": "DEEPSEEK_API_KEY", "openrouter": "OPENROUTER_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+    env_key_name = _ENV_KEY_MAP.get(provider_name, "")
+    env_key = os.getenv(env_key_name, "") if env_key_name else ""
+    active_key = db_key or env_key
+    key_source = "db" if db_key else ("env" if env_key else "none")
+
+    model = _get_setting("llm_model") or os.getenv(f"{provider_name.upper()}_MODEL", "") or "default"
+    base_url = _get_setting("llm_base_url") or os.getenv(f"{provider_name.upper()}_BASE_URL", "") or "default"
+
     try:
-        from llm_provider import get_llm_provider
         provider = get_llm_provider()
         result = provider.chat(
             [{"role": "user", "content": "请回复'LLM服务正常'这五个字"}],
             max_tokens=50,
             temperature=0,
         )
-        provider_name = get_setting("llm_provider", "deepseek") or "deepseek"
         return {
             "provider": provider_name,
             "available": True,
             "message": f"LLM服务 ({provider_name}) 可用",
             "response": result[:100],
+            "detail": {
+                "key_used": _mask_sensitive("llm_api_key", active_key) if active_key else "(未配置)",
+                "key_source": key_source,
+                "model": model,
+                "base_url": base_url,
+            },
         }
     except Exception as e:
-        provider_name = get_setting("llm_provider", "deepseek") or "deepseek"
         return {
             "provider": provider_name,
             "available": False,
             "message": f"LLM服务 ({provider_name}) 不可用: {str(e)[:200]}",
+            "detail": {
+                "key_used": _mask_sensitive("llm_api_key", active_key) if active_key else "(未配置)",
+                "key_source": key_source,
+                "model": model,
+                "base_url": base_url,
+            },
         }
 
 

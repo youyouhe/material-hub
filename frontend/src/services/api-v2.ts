@@ -698,7 +698,13 @@ export async function testOcr(): Promise<{ provider: string; available: boolean;
   return request(`${BASE}/settings/ocr/test`, { method: 'POST' });
 }
 
-export async function testLlm(): Promise<{ provider: string; available: boolean; message: string; response?: string }> {
+export async function testLlm(): Promise<{
+  provider: string;
+  available: boolean;
+  message: string;
+  response?: string;
+  detail?: { key_used: string; key_source: string; model: string; base_url: string };
+}> {
   return request(`${BASE}/settings/llm/test`, { method: 'POST' });
 }
 

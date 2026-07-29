@@ -98,10 +98,13 @@ export default function AdminSettingsPage() {
     } finally { setTestingOcr(false); }
   };
 
+  const [llmTestResult, setLlmTestResult] = useState<{ available: boolean; message: string; detail?: { key_used: string; key_source: string; model: string; base_url: string } } | null>(null);
   const handleTestLlm = async () => {
     setTestingLlm(true);
+    setLlmTestResult(null);
     try {
       const result = await testLlm();
+      setLlmTestResult(result);
       if (result.available) {
         toast.success(result.message);
       } else {
@@ -178,9 +181,15 @@ export default function AdminSettingsPage() {
                   </button>
                 </div>
                 <p className="text-xs text-cp-dim mt-1">
-                  {llmProvider === 'deepseek' && '在 platform.deepseek.com 获取API密钥'}
-                  {llmProvider === 'openrouter' && '在 openrouter.ai/keys 获取API密钥'}
-                  {llmProvider === 'anthropic' && '在 console.anthropic.com 获取API密钥'}
+                  {settings?.llm_api_key?.value && settings.llm_api_key.value !== '****'
+                    ? <span className="text-green-500">● 当前密钥: {settings.llm_api_key.value}</span>
+                    : settings?.llm_api_key?.value === '****'
+                      ? <span className="text-green-500">● 已配置密钥</span>
+                      : <span className="text-cp-rose">○ 未配置密钥</span>}
+                  <span className="mx-2">|</span>
+                  {llmProvider === 'deepseek' && '在 platform.deepseek.com 获取'}
+                  {llmProvider === 'openrouter' && '在 openrouter.ai/keys 获取'}
+                  {llmProvider === 'anthropic' && '在 console.anthropic.com 获取'}
                 </p>
               </div>
 
@@ -232,6 +241,22 @@ export default function AdminSettingsPage() {
                 {testingLlm ? '测试中...' : '测试LLM'}
               </button>
             </div>
+
+            {llmTestResult && (
+              <div className={`mt-4 p-3 rounded-lg text-xs ${llmTestResult.available ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
+                <div className={`font-medium ${llmTestResult.available ? 'text-green-400' : 'text-red-400'}`}>
+                  {llmTestResult.available ? '✅' : '❌'} {llmTestResult.message}
+                </div>
+                {llmTestResult.detail && (
+                  <div className="mt-2 space-y-0.5 text-cp-dim">
+                    <div>测试方式: <span className="text-cp-text">完整业务调用（发送真实 chat 请求验证密钥+模型）</span></div>
+                    <div>使用密钥: <span className="text-cp-text">{llmTestResult.detail.key_used}</span> <span className="text-cp-muted">（来源: {llmTestResult.detail.key_source === 'db' ? '数据库' : llmTestResult.detail.key_source === 'env' ? '环境变量' : '未配置'}）</span></div>
+                    <div>模型: <span className="text-cp-text">{llmTestResult.detail.model}</span></div>
+                    <div>API地址: <span className="text-cp-text">{llmTestResult.detail.base_url}</span></div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* OCR Provider Section */}
