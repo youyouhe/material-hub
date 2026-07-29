@@ -21,6 +21,48 @@ import tempfile
 from datetime import datetime
 from typing import Optional
 
+
+def _llm_judge_composite(sample_texts: list[str], title: str) -> dict:
+    """Ask LLM whether the sampled images are pages of one document or independent materials.
+
+    Returns: {"is_single_document": bool, "reason": str}
+    """
+    from llm_provider import get_llm_provider
+
+    # Truncate each sample to keep prompt short
+    excerpts = []
+    for i, text in enumerate(sample_texts, 1):
+        excerpts.append(f"--- 图{i} OCR摘录 ---\n{text[:500]}")
+    combined_excerpts = "\n\n".join(excerpts)
+
+    prompt = f"""判断以下来自投标文件"{title}"章节的多张图片扫描件，是【同一份文档的多个页面】，还是【多份独立的证件/证明材料】。
+
+{combined_excerpts}
+
+判断依据：
+- 如果是同一份文档的多页（如审计报告第1-30页、合同正文的连续页），返回 is_single_document=true
+- 如果是多份独立的证件或证明（如不同人的社保证明、多张不同的资格证书），返回 is_single_document=false
+
+只返回JSON，不要解释：
+{{"is_single_document": true/false, "reason": "一句话理由"}}"""
+
+    try:
+        provider = get_llm_provider()
+        result = provider.chat(
+            [{"role": "user", "content": prompt}],
+            max_tokens=100,
+            temperature=0,
+        )
+        import re
+        m = re.search(r'\{[^}]+\}', result)
+        if m:
+            return json.loads(m.group())
+    except Exception as e:
+        logger.warning("LLM composite judge failed: %s", e)
+
+    # Default: assume single document (safe — don't split)
+    return {"is_single_document": True, "reason": "LLM判断失败，默认保持合并"}
+
 from extractor import extract_materials, ExtractedMaterial, COMPOSITE_OCR_SAMPLE_PAGES
 
 logger = logging.getLogger("materialhub.bid_deconstruct")
@@ -200,14 +242,11 @@ def _process_child(child_doc_id: int) -> None:
     """Process a child document according to its nature.
 
     - atomic:    full OCR each image → LLM classify → entity link → folder
-    - composite: OCR only leading pages → light LLM metadata → no deep extraction
-    - text:      LLM classify on stored text → entity link → folder
+    - composite: OCR leading pages → LLM judges if one doc or independent →
+                 either classify as-is or split into atomic children
     """
     from dms_models import get_dms_session, DmsDocument
-    from dms_processor import (
-        _auto_assign_doc_type, _auto_assign_folder,
-        _link_entities, _set_expiry_date, _update_processing,
-    )
+    from dms_processor import _update_processing
     from ocr_client import ocr_image_bytes
 
     with get_dms_session() as session:
@@ -220,7 +259,6 @@ def _process_child(child_doc_id: int) -> None:
         rev = doc.current_revision()
         if not rev:
             return
-        # Extract file paths INSIDE the session (avoid detached-instance errors)
         file_paths = [
             (f.storage_path, f.filename)
             for f in rev.files if f.file_type == "original"
@@ -229,10 +267,7 @@ def _process_child(child_doc_id: int) -> None:
     _update_processing(child_doc_id, "processing")
 
     try:
-        # Note: text sections are no longer extracted by the extractor (they are
-        # project-specific, not reusable). Only atomic/composite reach here.
         if nature == "atomic":
-            # Atomic: OCR every image fully, concatenate
             all_text = []
             for storage_path, filename in file_paths:
                 full_path = os.path.join(os.getenv("DATA_DIR", "data"), storage_path)
@@ -246,22 +281,30 @@ def _process_child(child_doc_id: int) -> None:
                 _classify_and_link(child_doc_id, combined[:4000], doc_title)
 
         elif nature == "composite":
-            # Composite: OCR only leading pages for metadata
-            sample_text = []
+            # OCR leading pages, then LLM decides: one document or independent?
+            sample_texts = []
             for storage_path, filename in file_paths[:COMPOSITE_OCR_SAMPLE_PAGES]:
                 full_path = os.path.join(os.getenv("DATA_DIR", "data"), storage_path)
                 if os.path.exists(full_path):
                     with open(full_path, "rb") as fh:
                         ocr_text = ocr_image_bytes(fh.read(), label=filename)
                     if ocr_text:
-                        sample_text.append(ocr_text)
-            combined = "\n\n".join(sample_text)
-            if combined:
-                # Light classification — extract type/period/issuer only
-                _classify_and_link(child_doc_id, combined[:3000], doc_title, light=True)
+                        sample_texts.append(ocr_text)
+
+            if not sample_texts:
+                logger.warning("Composite doc %d: no OCR text from samples", child_doc_id)
+            else:
+                judgment = _llm_judge_composite(sample_texts, doc_title)
+                logger.info("Composite doc %d LLM judgment: %s", child_doc_id, judgment)
+
+                if judgment.get("is_single_document", True):
+                    combined = "\n\n".join(sample_texts)
+                    _classify_and_link(child_doc_id, combined[:3000], doc_title, light=True)
+                else:
+                    logger.info("Composite doc %d: splitting into independent materials", child_doc_id)
+                    _split_composite_to_atomic(child_doc_id, file_paths, doc_title)
 
         _update_processing(child_doc_id, "completed")
-        # Activate the child document
         with get_dms_session() as session:
             d = session.query(DmsDocument).filter(DmsDocument.id == child_doc_id).first()
             if d and d.status == "draft":
@@ -270,6 +313,81 @@ def _process_child(child_doc_id: int) -> None:
     except Exception as e:
         logger.warning("Child %d processing error: %s", child_doc_id, e)
         _update_processing(child_doc_id, "failed", error=str(e))
+
+
+def _split_composite_to_atomic(parent_doc_id: int, file_paths: list, doc_title: str) -> None:
+    """Split a composite doc (misjudged as one doc but actually independent materials).
+
+    Each image becomes its own atomic child doc with full OCR + classification.
+    The original composite doc is marked as 'archived' (kept as record, not deleted).
+    """
+    from dms_models import get_dms_session, DmsDocument, Revision, DmsFile
+    from ocr_client import ocr_image_bytes
+
+    split_ids = []
+    for storage_path, filename in file_paths:
+        try:
+            full_path = os.path.join(os.getenv("DATA_DIR", "data"), storage_path)
+            if not os.path.exists(full_path):
+                continue
+            # OCR this image
+            with open(full_path, "rb") as fh:
+                ocr_text = ocr_image_bytes(fh.read(), label=filename)
+            if not ocr_text:
+                continue
+
+            # Create a new atomic doc for this image
+            meta = {
+                "_bid_parent": {"parent_doc_id": parent_doc_id, "source_title": doc_title},
+                "_material_nature": "atomic",
+                "_split_from_composite": parent_doc_id,
+                "_processing": {"status": "split"},
+            }
+            with get_dms_session() as session:
+                child = DmsDocument(
+                    title=f"{doc_title} - {filename}",
+                    status="draft",
+                    meta_json=json.dumps(meta, ensure_ascii=False),
+                )
+                session.add(child)
+                session.flush()
+
+                rev = Revision(document_id=child.id, version_number=1, is_current=True)
+                session.add(rev)
+                session.flush()
+
+                dms_file = DmsFile(
+                    revision_id=rev.id,
+                    file_type="original",
+                    filename=filename,
+                    storage_path=storage_path,
+                    mime_type="image/png",
+                    file_size=os.path.getsize(full_path),
+                )
+                session.add(dms_file)
+                session.commit()
+                split_ids.append(child.id)
+
+            # Classify the split child
+            _classify_and_link(child.id, ocr_text[:4000], doc_title)
+            with get_dms_session() as session:
+                d = session.query(DmsDocument).filter(DmsDocument.id == child.id).first()
+                if d and d.status == "draft":
+                    d.status = "active"
+
+        except Exception as e:
+            logger.warning("Failed to split image %s from composite %d: %s", filename, parent_doc_id, e)
+
+    # Archive the original composite (keep as record)
+    if split_ids:
+        with get_dms_session() as session:
+            parent = session.query(DmsDocument).filter(DmsDocument.id == parent_doc_id).first()
+            if parent:
+                parent.status = "archived"
+                meta = json.loads(parent.meta_json) if isinstance(parent.meta_json, str) else (parent.meta_json or {})
+                meta["_split_into"] = split_ids
+                parent.meta_json = json.dumps(meta, ensure_ascii=False)
+        logger.info("Composite doc %d split into %d atomic docs: %s", parent_doc_id, len(split_ids), split_ids)
 
 
 def _classify_and_link(
