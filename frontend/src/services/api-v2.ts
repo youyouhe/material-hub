@@ -694,7 +694,12 @@ export async function batchUpdateSettings(settings: Record<string, string>): Pro
   return request(`${BASE}/settings/batch`, { method: 'PUT', ...jsonBody({ settings }) });
 }
 
-export async function testOcr(): Promise<{ provider: string; available: boolean; message: string }> {
+export async function testOcr(): Promise<{
+  provider: string;
+  available: boolean;
+  message: string;
+  detail?: Record<string, string>;
+}> {
   return request(`${BASE}/settings/ocr/test`, { method: 'POST' });
 }
 

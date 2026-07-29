@@ -84,10 +84,13 @@ export default function AdminSettingsPage() {
     } finally { setSaving(false); }
   };
 
+  const [ocrTestResult, setOcrTestResult] = useState<{ available: boolean; message: string; detail?: Record<string, string> } | null>(null);
   const handleTestOcr = async () => {
     setTestingOcr(true);
+    setOcrTestResult(null);
     try {
       const result = await testOcr();
+      setOcrTestResult(result);
       if (result.available) {
         toast.success(result.message);
       } else {
@@ -325,6 +328,12 @@ export default function AdminSettingsPage() {
                       </button>
                     </div>
                     <p className="text-xs text-cp-dim mt-1">
+                      {settings?.bigmodel_api_key?.value && settings.bigmodel_api_key.value !== '****'
+                        ? <span className="text-green-500">● 当前密钥: {settings.bigmodel_api_key.value}</span>
+                        : settings?.bigmodel_api_key?.value === '****'
+                          ? <span className="text-green-500">● 已配置密钥</span>
+                          : <span className="text-cp-rose">○ 未配置密钥（将回退到 ASR_API_KEY）</span>}
+                      <span className="mx-2">|</span>
                       在 open.bigmodel.cn 获取API密钥
                     </p>
                   </div>
@@ -400,6 +409,21 @@ export default function AdminSettingsPage() {
                 {testingOcr ? '测试中...' : '测试OCR'}
               </button>
             </div>
+
+            {ocrTestResult && (
+              <div className={`mt-4 p-3 rounded-lg text-xs ${ocrTestResult.available ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
+                <div className={`font-medium ${ocrTestResult.available ? 'text-green-400' : 'text-red-400'}`}>
+                  {ocrTestResult.available ? '✅' : '❌'} {ocrTestResult.message}
+                </div>
+                {ocrTestResult.detail && (
+                  <div className="mt-2 space-y-0.5 text-cp-dim">
+                    {ocrTestResult.detail.test_method && <div>测试方式: <span className="text-cp-text">{ocrTestResult.detail.test_method}</span></div>}
+                    {ocrTestResult.detail.key_used && <div>使用密钥: <span className="text-cp-text">{ocrTestResult.detail.key_used}</span> {ocrTestResult.detail.key_source && <span className="text-cp-muted">（来源: {ocrTestResult.detail.key_source === 'db' ? '数据库' : ocrTestResult.detail.key_source === 'env' ? '环境变量' : '未配置'}）</span>}</div>}
+                    {ocrTestResult.detail.url && <div>服务地址: <span className="text-cp-text">{ocrTestResult.detail.url}</span></div>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

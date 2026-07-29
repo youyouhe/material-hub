@@ -284,18 +284,44 @@ def resolve_mcp_token(token: str = Body(..., embed=True)):
 
 @router.post("/ocr/test", dependencies=[require_role("admin")])
 async def test_ocr():
-    """Test the current OCR configuration."""
-    from ocr_client import check_ocr_service, _get_ocr_provider
+    """Test the current OCR configuration.
+
+    test_method varies by provider:
+      - bigmodel:  key existence check (no real OCR call, avoids quota)
+      - deepseek:  HTTP health-check ping to the service URL
+      - paddleocr: local engine availability check
+    """
+    import os
+    from ocr_client import check_ocr_service, _get_ocr_provider, _get_bigmodel_api_key, _get_deepseek_url
 
     provider = _get_ocr_provider()
     available = check_ocr_service()
+
+    # Build detail
+    detail: dict = {}
+    if provider == "bigmodel":
+        db_key = get_setting("bigmodel_api_key")
+        env_key = os.getenv("BIGMODEL_API_KEY") or os.getenv("ASR_API_KEY")
+        active_key = db_key or env_key
+        detail = {
+            "key_used": _mask_sensitive("bigmodel_api_key", active_key) if active_key else "(未配置)",
+            "key_source": "db" if db_key else ("env" if env_key else "none"),
+            "test_method": "密钥存在性检查（未消耗 OCR 配额）",
+        }
+    elif provider == "deepseek":
+        url = _get_deepseek_url()
+        detail = {"url": url, "test_method": "服务健康检查 (GET /health)"}
+    elif provider == "paddleocr":
+        detail = {"test_method": "本地引擎加载检查"}
+    else:
+        detail = {"test_method": "未知 provider"}
 
     return {
         "provider": provider,
         "available": available,
         "message": f"OCR服务 ({provider}) {'可用' if available else '不可用'}",
+        "detail": detail,
     }
-
 
 # ============================================================
 # MCP Token Management
