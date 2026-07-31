@@ -985,65 +985,69 @@ def _tool_delete_folder(folder_path: str, **kwargs) -> str:
 
 
 def _tool_kb_deep_search(query: str, mode: str = "multihop", limit: int = 10, **kwargs) -> str:
-    """Deep semantic + knowledge graph search."""
-    try:
-        import requests as req
-        api_base = "http://localhost:8201"
-        url = f"{api_base}/api/v2/kb/search/multihop" if mode == "multihop" else f"{api_base}/api/v2/kb/search"
-        params = {"q": query, "top_k": min(limit, 20)}
-        if mode == "multihop":
-            params["max_hops"] = 2
+    """Deep semantic + knowledge graph search.
 
-        resp = req.get(url, params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+    直接调用底层 KB 函数,不走 HTTP 自调用 —— 既免除了认证问题,
+    也避免 chat 请求占用线程池线程去等待另一个内部 HTTP 请求(曾经的 30s 超时根因)。
+    allowed_folder_ids=None 表示 admin 全访问(本工具为系统内部调用)。
+    """
+    try:
+        top_k = min(limit, 20)
+        if mode == "multihop":
+            from kb_multihop import multihop_search
+            result = multihop_search(query=query, top_k=top_k, max_hops=2, allowed_folder_ids=None)
+            results = result.get("results", [])
+            trace = result.get("trace")
+        else:
+            from kb_search import vector_search, hybrid_search
+            _fn = vector_search if mode == "vector" else hybrid_search
+            results = _fn(query=query, top_k=top_k, allowed_folder_ids=None)
+            trace = None
     except Exception as e:
         return json.dumps({"error": f"KB search failed: {e}"}, ensure_ascii=False)
 
-    results = data.get("results", [])
     items = []
     for r in results:
         items.append({
             "doc_id": r.get("doc_id"),
             "title": r.get("title"),
-            "score": r.get("score", 0),
+            "score": r.get("score") or r.get("rrf_score") or 0,
             "doc_type": r.get("doc_type", ""),
             "content_preview": (r.get("content") or "")[:300],
             "entities": r.get("entity_names", []),
         })
 
     response = {"results": items, "total": len(items), "mode": mode}
-    if data.get("trace"):
+    if trace:
         response["search_steps"] = [
             {"step": s["step"], "name": s["name"], "result": s["detail"]}
-            for s in data["trace"]["steps"]
+            for s in trace.get("steps", [])
         ]
-        response["entities_found"] = data["trace"]["entities_found"]
-        response["events_found"] = data["trace"]["events_found"]
+        response["entities_found"] = trace.get("entities_found")
+        response["events_found"] = trace.get("events_found")
 
     return json.dumps(response, ensure_ascii=False)
 
 
 def _tool_kb_graph_explore(entity_name: str, depth: int = 1, **kwargs) -> str:
-    """Explore knowledge graph around an entity."""
+    """Explore knowledge graph around an entity.
+
+    直接调用 kb_graph.get_entity_neighborhood,不走 HTTP 自调用(同 deep_search)。
+    """
     try:
-        import requests as req
-        api_base = "http://localhost:8201"
-        resp = req.get(
-            f"{api_base}/api/v2/kb/entities/{entity_name}/graph",
-            params={"depth": depth},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        from kb_graph import get_entity_neighborhood
+        data = get_entity_neighborhood(entity_name, depth)
     except Exception as e:
         return json.dumps({"error": f"Graph explore failed: {e}"}, ensure_ascii=False)
 
-    if "error" in data:
-        return json.dumps(data, ensure_ascii=False)
+    if data.get("error"):
+        return json.dumps(
+            {"error": {"code": "ENTITY_NOT_FOUND", "message": data["error"]}},
+            ensure_ascii=False,
+        )
 
     return json.dumps({
-        "entity": data["entity"],
+        "entity": data.get("entity"),
         "related_entities": data.get("related_entities", []),
         "relations": data.get("relations", []),
         "events": data.get("events", []),

@@ -1,6 +1,6 @@
 import { getToken, clearToken } from './auth';
 import type {
-  FolderTreeNode, Folder, DmsDocument, Revision, Entity, Tag, DocType,
+  FolderTreeNode, Folder, DmsDocument, Revision, Entity, EntityRelation, Tag, DocType,
   KbSearchResponse, KbStatus, KbSyncResult, KbEvent, KbGraphEntity, KbGraphResponse,
   BidProject, BidRequirement, BidTeamMember, BidDocument, ChecklistResponse,
   DocumentSuggestion, AuditLog, AdminUser, ApiAgent, SearchResult, UploadQueueItem,
@@ -192,6 +192,10 @@ export async function listEntities(params?: {
 
 export async function getEntity(id: number): Promise<Entity> {
   return request(`${BASE}/entities/${id}`);
+}
+
+export async function getEntityRelations(): Promise<{ results: EntityRelation[]; total: number }> {
+  return request(`${BASE}/entities/relations`);
 }
 
 export async function createEntity(data: { entity_type: string; name: string; parent_id?: number; attributes?: Record<string, unknown> }): Promise<Entity> {

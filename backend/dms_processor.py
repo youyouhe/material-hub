@@ -971,6 +971,11 @@ def _async_event_extraction(doc_id: int):
         from kb_event_ingest import ingest_events_for_document
         count = ingest_events_for_document(doc_id)
         logger.info(f"Async event extraction for doc {doc_id}: {count} events")
+
+        # Extract and store entity relations (auto relation extraction)
+        from kb_relation_ingest import ingest_relations_for_document
+        rel_count = ingest_relations_for_document(doc_id)
+        logger.info(f"Async relation extraction for doc {doc_id}: {rel_count} relations")
     except Exception as e:
         logger.warning(f"Async event extraction failed for doc {doc_id}: {e}")
 

@@ -194,7 +194,7 @@ def mcp_status(request: Request):
 @router.post("/mcp/start", dependencies=[require_role("admin")])
 def mcp_start():
     """Start MCP SSE server as background process. Kills existing first."""
-    import subprocess, os, socket
+    import subprocess, os, socket, sys
 
     port = _mcp_port()
 
@@ -235,7 +235,7 @@ def mcp_start():
     }
     with open(log_file, "w") as lf:
         subprocess.Popen(
-            ["python3", server_script],
+            [sys.executable, server_script],
             cwd=server_dir, env=env,
             stdout=lf, stderr=lf,
             start_new_session=True,

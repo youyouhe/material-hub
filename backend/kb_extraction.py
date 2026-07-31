@@ -330,3 +330,145 @@ def _local_extract_event(text: str, doc_title: str = "") -> Optional[Dict]:
         "keywords": [w for w in re.findall(r'[一-龥]{2,6}', text[:200]) if len(w) >= 2][:8],
         "entities": entities,
     }
+
+
+# ============================================================
+# Relation Extraction (entity-to-entity relations)
+# ============================================================
+
+RELATION_EXTRACTION_SYSTEM = """你是一个专业的实体关系抽取器。从文本中识别实体之间的语义关系。
+
+## 任务
+提取实体之间的有向关系:起点实体 → 关系 → 终点实体。
+
+## 推荐关系类型(注意方向: from → to)
+- employed_by: 人员 → 公司/机构 (该人员受雇于该公司)
+- holds_certificate: 人员/公司 → 证书 (持有者 → 其持有的证书)
+- graduated_from: 人员 → 学校
+- signed_with: 公司A → 公司B (A与B签署合同,一份合同写一条即可)
+- located_at: 实体 → 地址/地点 (实体位于该地)
+- legal_rep_of: 人员 → 公司 (该人员是该公司法定代表人)
+- issued_by: 证书/文件 → 颁发机构 ("X由Y颁发"写作 X issued_by Y)
+- subsidiary_of: 分公司/子公司 → 母公司
+- party_to: 合同/协议 → 参与方实体
+
+## 方向规则(严格遵守)
+- legal_rep_of 永远是 人员 → 公司,绝不能写成 公司 → 人员
+- issued_by 永远是 证书/文件 → 颁发机构,绝不能写成 机构 → 被颁发对象
+- 每条关系的方向必须符合上述 from → to 含义;若不确定方向,就不要提取该条
+
+## 实体类型
+person(人员), organization(公司/机构), location(地点), certificate(证书),
+contract(合同), product(产品/系统), subject(概念/主题), project(项目)
+
+## 输出格式
+严格返回 JSON:
+{"relations": [{"from_name": "起点实体名", "from_type": "类型", "to_name": "终点实体名", "to_type": "类型", "relation": "关系类型", "description": "关系说明", "confidence": 0.0-1.0}]}
+
+## 规则
+- 关系必须基于文本明确表达或可合理推断的事实,不要编造
+- from/to 实体名取全称
+- relation 用英文蛇形命名(snake_case),优先用推荐类型
+- 只提取有意义的关系,忽略琐碎/泛指
+- 没有关系时返回 {"relations": []}"""
+
+
+def extract_relations(text: str, document_title: str = "") -> List[Dict]:
+    """Extract entity-to-entity relations from text using LLM.
+
+    Relation types are free-form (guided by the prompt's recommended list).
+
+    Returns:
+        List of relation dicts: {from_name, from_type, to_name, to_type,
+        relation, description, confidence}
+    """
+    text = text[:3000]
+
+    try:
+        provider = get_llm_provider()
+        user_msg = f"文档标题: {document_title}\n\n文本内容:\n{text}" if document_title else text
+        messages = [
+            {"role": "system", "content": RELATION_EXTRACTION_SYSTEM},
+            {"role": "user", "content": f"请从以下文本中抽取实体间关系:\n\n{user_msg}"},
+        ]
+        response = provider.chat(messages, temperature=0.1, max_tokens=1500)
+
+        result = _parse_json_response(response)
+        relations = result.get("relations", [])
+        return [
+            {
+                "from_name": r["from_name"].strip(),
+                "from_type": r.get("from_type", "subject").strip(),
+                "to_name": r["to_name"].strip(),
+                "to_type": r.get("to_type", "subject").strip(),
+                "relation": r.get("relation", "related_to").strip(),
+                "description": r.get("description", "").strip(),
+                "confidence": r.get("confidence"),
+            }
+            for r in relations
+            if isinstance(r, dict) and r.get("from_name", "").strip() and r.get("to_name", "").strip()
+        ]
+    except Exception as e:
+        logger.warning("Relation extraction failed for '%s': %s", document_title, e)
+        return []
+
+
+def extract_relations_from_document(doc_id: int) -> List[Dict]:
+    """Extract entity relations from all chunks of a document.
+
+    Mirrors extract_events_from_document: reads KB chunks, extracts per chunk,
+    deduplicates by (from, relation, to).
+    """
+    try:
+        from kb_database import get_session_local
+        from kb_models import KbChunk
+        from dms_models import get_dms_session, DmsDocument
+
+        doc_title = ""
+        with get_dms_session() as db:
+            doc = db.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
+            if doc:
+                doc_title = doc.title
+
+        SessionLocal = get_session_local()
+        session = SessionLocal()
+        try:
+            chunks = session.query(KbChunk).filter(
+                KbChunk.doc_id == doc_id
+            ).order_by(KbChunk.chunk_index).all()
+
+            all_relations = []
+            for chunk in chunks[:20]:  # Max 20 chunks to control LLM cost
+                text = f"{chunk.heading_path or ''}\n{chunk.content}" if chunk.heading_path else chunk.content
+                for rel in extract_relations(text[:2000], doc_title):
+                    rel["_chunk_id"] = chunk.id
+                    all_relations.append(rel)
+
+            return _deduplicate_relations(all_relations)
+        finally:
+            session.close()
+    except Exception as e:
+        logger.error("Document-level relation extraction failed for doc %d: %s", doc_id, e)
+        return []
+
+
+def _deduplicate_relations(relations: List[Dict]) -> List[Dict]:
+    """Deduplicate relations by (from_name, relation, to_name), keep highest confidence."""
+    seen = {}
+    for r in relations:
+        key = (
+            r.get("from_name", "").lower(),
+            r.get("relation", "").lower(),
+            r.get("to_name", "").lower(),
+        )
+        conf = r.get("confidence") or 0
+        try:
+            conf = float(conf)
+        except (TypeError, ValueError):
+            conf = 0
+        r["confidence"] = conf
+        if key not in seen or conf > (seen[key].get("confidence") or 0):
+            seen[key] = r
+    for r in seen.values():
+        r.pop("_chunk_id", None)
+    return list(seen.values())

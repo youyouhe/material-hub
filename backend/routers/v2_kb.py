@@ -171,6 +171,20 @@ async def kb_entity_search(
         session.close()
 
 
+def _kb_unavailable_error() -> dict:
+    """KB (PostgreSQL) 不可用时返回的统一降级响应。
+
+    知识库/知识图谱功能依赖独立的 PostgreSQL + pgvector。
+    当 PG 未连接时优雅降级为明确提示,而非抛出 500 Internal Server Error。
+    与 kb_database.init_kb_db() 的降级哲学保持一致。
+    """
+    logger.warning("KB graph requested but KB (PostgreSQL) is unavailable")
+    return {"error": {
+        "code": "KB_UNAVAILABLE",
+        "message": "知识库服务未就绪,无法加载知识图谱。请确认 PostgreSQL 已运行且凭据已配置。",
+    }}
+
+
 @router.get("/entities/{entity_name}/graph")
 async def kb_entity_graph(
     entity_name: str,
@@ -247,6 +261,9 @@ async def kb_entity_graph(
             "events": [_event_summary(e) for e in events],
             "depth2_entities": [e.to_dict() for e in depth2] if depth >= 2 else [],
         }
+    except Exception:
+        logger.warning("kb_entity_graph failed (KB unavailable?)", exc_info=True)
+        return _kb_unavailable_error()
     finally:
         session.close()
 
@@ -300,6 +317,9 @@ async def kb_batch_entity_relations(
                 })
 
         return {"relations": result}
+    except Exception:
+        logger.warning("kb_batch_entity_relations failed (KB unavailable?)", exc_info=True)
+        return {"relations": []}
     finally:
         session.close()
 

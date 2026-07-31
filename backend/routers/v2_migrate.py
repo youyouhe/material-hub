@@ -508,8 +508,12 @@ async def migrate_entity_relations():
         person_entities = {
             e.name: e for e in dms.query(Entity).filter(Entity.entity_type == "person").all()
         }
+        def _norm(s: str) -> str:
+            """归一化实体名:全角括号→半角、去空格,兼容 legacy/dms 跨源命名差异。"""
+            return (s or "").replace("（", "(").replace("）", ")").replace(" ", "").strip()
+
         org_entities = {
-            e.name: e for e in dms.query(Entity).filter(Entity.entity_type == "org").all()
+            _norm(e.name): e for e in dms.query(Entity).filter(Entity.entity_type == "org").all()
         }
 
         for pd in person_data:
@@ -519,7 +523,7 @@ async def migrate_entity_relations():
                 errors.append(f"Person entity not found for '{pd['name']}' (legacy id={pd['id']})")
                 continue
 
-            # Find the company's DMS entity
+            # Find the company's DMS entity (归一化匹配, 兼容全角/半角括号差异)
             company_name = legacy_company_names.get(pd["company_id"])
             if not company_name:
                 errors.append(
@@ -527,13 +531,7 @@ async def migrate_entity_relations():
                 )
                 continue
 
-            org_entity = org_entities.get(company_name)
-            if not org_entity:
-                # Try by legacy_company_id in dedicated column
-                org_entity = dms.query(Entity).filter(
-                    Entity.entity_type == "org",
-                    Entity.company_id_legacy == pd["company_id"],
-                ).first()
+            org_entity = org_entities.get(_norm(company_name))
             if not org_entity:
                 errors.append(
                     f"Company entity '{company_name}' (legacy id={pd['company_id']}) "

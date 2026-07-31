@@ -1,0 +1,729 @@
+{
+  "source": "山东第一医科大学附属肿瘤医院智慧护理信息系统软件开发升级服务项目（6068）投标文件V2.0.docx",
+  "company": "琪信通达（北京）科技有限公司",
+  "image_dir": "/tmp/docx_images",
+  "skipped": {
+    "reason": "技术方案架构图/系统截图/流程图，非可复用材料",
+    "images": [
+      "image57.png",
+      "image58.png",
+      "image59.png",
+      "image60.png",
+      "image61.png",
+      "image62.png",
+      "image63.png",
+      "image64.png",
+      "image65.png",
+      "image66.png",
+      "image67.png",
+      "image68.png",
+      "image69.png",
+      "image70.png",
+      "image71.png",
+      "image72.png",
+      "image73.png",
+      "image74.png",
+      "image75.png",
+      "image76.png",
+      "image77.png",
+      "image78.png",
+      "image79.png",
+      "image80.png",
+      "image81.png",
+      "image82.png",
+      "image83.png",
+      "image150.png",
+      "image151.png",
+      "image152.png"
+    ]
+  },
+  "imports": [
+    {
+      "id": 1,
+      "title": "法定代表人身份证-王春红",
+      "images": [
+        "image1.png",
+        "image2.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "王春红",
+      "description": "法定代表人身份证正反面",
+      "_file_path": "/tmp/import_ready/01_法定代表人身份证-王春红.pdf"
+    },
+    {
+      "id": 2,
+      "title": "委托代理人身份证",
+      "images": [
+        "image3.png",
+        "image4.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "",
+      "description": "委托代理人身份证正反面",
+      "_file_path": "/tmp/import_ready/02_委托代理人身份证.pdf"
+    },
+    {
+      "id": 3,
+      "title": "委托代理人社保证明",
+      "images": [
+        "image5.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "",
+      "folder": "/公司资质/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "委托代理人在本单位缴纳社保证明",
+      "_file_path": "/tmp/docx_images/image5.png"
+    },
+    {
+      "id": 4,
+      "title": "业绩一-IT资产维护信息系统运维合同",
+      "images": [
+        "image6.png",
+        "image7.png",
+        "image8.png",
+        "image9.png",
+        "image10.png",
+        "image11.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "contract",
+      "folder": "/业绩材料/合同/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "2024-2026年IT资产维护（智慧安全监管系统运维）项目合同",
+      "_file_path": "/tmp/import_ready/04_业绩一-IT资产维护信息系统运维合同.pdf"
+    },
+    {
+      "id": 5,
+      "title": "业绩二-国网嘉峪关网上电网系统运维合同",
+      "images": [
+        "image12.png",
+        "image13.png",
+        "image14.png",
+        "image15.png",
+        "image16.png",
+        "image17.png",
+        "image18.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "contract",
+      "folder": "/业绩材料/合同/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "国网嘉峪关供电公司2023年网上电网系统运维项目合同",
+      "_file_path": "/tmp/import_ready/05_业绩二-国网嘉峪关网上电网系统运维合同.pdf"
+    },
+    {
+      "id": 6,
+      "title": "业绩三-国网定西网上电网数据治理合同",
+      "images": [
+        "image19.png",
+        "image20.png",
+        "image21.png",
+        "image22.png",
+        "image23.png",
+        "image24.png",
+        "image25.png",
+        "image26.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "contract",
+      "folder": "/业绩材料/合同/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "国网定西公司2023年网上电网数据治理服务项目合同",
+      "_file_path": "/tmp/import_ready/06_业绩三-国网定西网上电网数据治理合同.pdf"
+    },
+    {
+      "id": 7,
+      "title": "琪信通达营业执照",
+      "images": [
+        "image27.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "business-license",
+      "folder": "/公司资质/营业执照/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "营业执照副本",
+      "_file_path": "/tmp/docx_images/image27.png"
+    },
+    {
+      "id": 8,
+      "title": "年度审计报告",
+      "images": [
+        "image28.png",
+        "image29.png",
+        "image30.png",
+        "image31.png",
+        "image32.png",
+        "image33.png",
+        "image34.png",
+        "image35.png",
+        "image36.png",
+        "image37.png",
+        "image38.png",
+        "image39.png",
+        "image40.png",
+        "image41.png",
+        "image42.png",
+        "image43.png",
+        "image44.png",
+        "image45.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "",
+      "folder": "/公司资质/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "会计师事务所出具的年度审计报告（含审计报告正文、财务报表及附注）",
+      "_file_path": "/tmp/import_ready/08_年度审计报告.pdf"
+    },
+    {
+      "id": 9,
+      "title": "纳税证明",
+      "images": [
+        "image46.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "",
+      "folder": "/公司资质/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "依法缴纳税收的相关材料",
+      "_file_path": "/tmp/docx_images/image46.png"
+    },
+    {
+      "id": 10,
+      "title": "社保缴纳凭据",
+      "images": [
+        "image47.png",
+        "image48.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "",
+      "folder": "/公司资质/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "依法缴纳社会保障资金的凭据",
+      "_file_path": "/tmp/import_ready/10_社保缴纳凭据.pdf"
+    },
+    {
+      "id": 11,
+      "title": "信用中国查询结果",
+      "images": [
+        "image49.png",
+        "image50.png",
+        "image51.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "",
+      "folder": "/公司资质/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "信用中国网站查询结果截图",
+      "_file_path": "/tmp/import_ready/11_信用中国查询结果.pdf"
+    },
+    {
+      "id": 12,
+      "title": "中国政府采购网查询结果",
+      "images": [
+        "image52.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "",
+      "folder": "/公司资质/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "中国政府采购网查询结果截图",
+      "_file_path": "/tmp/docx_images/image52.png"
+    },
+    {
+      "id": 13,
+      "title": "ISO27001信息安全管理体系认证",
+      "images": [
+        "image53.png",
+        "image54.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "iso-cert",
+      "folder": "/公司资质/iso认证/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "ISO/IEC 27001认证证书（中英文）",
+      "_file_path": "/tmp/import_ready/13_ISO27001信息安全管理体系认证.pdf"
+    },
+    {
+      "id": 14,
+      "title": "ISO20000信息技术服务管理体系认证",
+      "images": [
+        "image55.png",
+        "image56.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "iso-cert",
+      "folder": "/公司资质/iso认证/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "ISO/IEC 20000认证证书（中英文）",
+      "_file_path": "/tmp/import_ready/14_ISO20000信息技术服务管理体系认证.pdf"
+    },
+    {
+      "id": 15,
+      "title": "PMP证书-纪泽丰",
+      "images": [
+        "image84.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职业资格/",
+      "entity_names": "纪泽丰",
+      "description": "PMP项目管理专业人士认证",
+      "_file_path": "/tmp/docx_images/image84.png"
+    },
+    {
+      "id": 16,
+      "title": "Agent Engineer认证-纪泽丰",
+      "images": [
+        "image85.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职业资格/",
+      "entity_names": "纪泽丰",
+      "description": "Datawhale Agent Engineering认证",
+      "_file_path": "/tmp/docx_images/image85.png"
+    },
+    {
+      "id": 17,
+      "title": "生成式人工智能工程师职称-纪泽丰",
+      "images": [
+        "image86.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职称证书/",
+      "entity_names": "纪泽丰",
+      "description": "生成式人工智能工程师职称证书",
+      "_file_path": "/tmp/docx_images/image86.png"
+    },
+    {
+      "id": 18,
+      "title": "麒麟操作系统应用工程师认证-纪泽丰",
+      "images": [
+        "image87.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职业资格/",
+      "entity_names": "纪泽丰",
+      "description": "麒麟操作系统应用工程师认证",
+      "_file_path": "/tmp/docx_images/image87.png"
+    },
+    {
+      "id": 19,
+      "title": "团队社保证明-北京",
+      "images": [
+        "image88.png",
+        "image89.png",
+        "image90.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "",
+      "folder": "/公司资质/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "团队全体成员社保缴纳证明（北京平谷区，3页）",
+      "_file_path": "/tmp/import_ready/19_团队社保证明-北京.pdf"
+    },
+    {
+      "id": 20,
+      "title": "团队社保证明-广东",
+      "images": [
+        "image147.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "",
+      "folder": "/公司资质/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "团队成员广东省社会保险参保证明",
+      "_file_path": "/tmp/docx_images/image147.png"
+    },
+    {
+      "id": 21,
+      "title": "学历证书-吴良伟",
+      "images": [
+        "image91.png",
+        "image92.png",
+        "image93.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "吴良伟",
+      "description": "毕业证+学位证+学信网验证（计算机科学与技术本科）",
+      "_file_path": "/tmp/import_ready/21_学历证书-吴良伟.pdf"
+    },
+    {
+      "id": 22,
+      "title": "身份证-吴良伟",
+      "images": [
+        "image94.png",
+        "image95.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "吴良伟",
+      "description": "身份证正反面",
+      "_file_path": "/tmp/import_ready/22_身份证-吴良伟.pdf"
+    },
+    {
+      "id": 23,
+      "title": "学历证书-陈柳慧",
+      "images": [
+        "image96.png",
+        "image97.png",
+        "image98.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "陈柳慧",
+      "description": "毕业证+学位证+学信网验证",
+      "_file_path": "/tmp/import_ready/23_学历证书-陈柳慧.pdf"
+    },
+    {
+      "id": 24,
+      "title": "身份证-陈柳慧",
+      "images": [
+        "image99.png",
+        "image100.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "陈柳慧",
+      "description": "身份证正反面",
+      "_file_path": "/tmp/import_ready/24_身份证-陈柳慧.pdf"
+    },
+    {
+      "id": 25,
+      "title": "网络工程师证书-陈柳慧",
+      "images": [
+        "image101.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职业资格/",
+      "entity_names": "陈柳慧",
+      "description": "网络工程师资格证书",
+      "_file_path": "/tmp/docx_images/image101.png"
+    },
+    {
+      "id": 26,
+      "title": "学历证书-林枫鑫",
+      "images": [
+        "image102.png",
+        "image103.png",
+        "image104.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "林枫鑫",
+      "description": "毕业证+学位证+学信网验证",
+      "_file_path": "/tmp/import_ready/26_学历证书-林枫鑫.pdf"
+    },
+    {
+      "id": 27,
+      "title": "身份证-林枫鑫",
+      "images": [
+        "image105.png",
+        "image106.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "林枫鑫",
+      "description": "身份证正反面",
+      "_file_path": "/tmp/import_ready/27_身份证-林枫鑫.pdf"
+    },
+    {
+      "id": 28,
+      "title": "软件设计师证书-林枫鑫",
+      "images": [
+        "image107.png",
+        "image108.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职业资格/",
+      "entity_names": "林枫鑫",
+      "description": "软件设计师资格证书",
+      "_file_path": "/tmp/import_ready/28_软件设计师证书-林枫鑫.pdf"
+    },
+    {
+      "id": 29,
+      "title": "学历证书-舒标",
+      "images": [
+        "image109.png",
+        "image110.png",
+        "image111.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "舒标",
+      "description": "毕业证+学位证+学信网验证",
+      "_file_path": "/tmp/import_ready/29_学历证书-舒标.pdf"
+    },
+    {
+      "id": 30,
+      "title": "身份证-舒标",
+      "images": [
+        "image112.png",
+        "image113.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "舒标",
+      "description": "身份证正反面",
+      "_file_path": "/tmp/import_ready/30_身份证-舒标.pdf"
+    },
+    {
+      "id": 31,
+      "title": "软件设计师证书-舒标",
+      "images": [
+        "image114.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职业资格/",
+      "entity_names": "舒标",
+      "description": "软件设计师资格证书",
+      "_file_path": "/tmp/docx_images/image114.png"
+    },
+    {
+      "id": 32,
+      "title": "学历证书-温利婷",
+      "images": [
+        "image115.png",
+        "image116.png",
+        "image117.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "温利婷",
+      "description": "毕业证+学位证+学信网验证",
+      "_file_path": "/tmp/import_ready/32_学历证书-温利婷.pdf"
+    },
+    {
+      "id": 33,
+      "title": "身份证-温利婷",
+      "images": [
+        "image118.png",
+        "image119.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "温利婷",
+      "description": "身份证正反面",
+      "_file_path": "/tmp/import_ready/33_身份证-温利婷.pdf"
+    },
+    {
+      "id": 34,
+      "title": "软件设计师证书-温利婷",
+      "images": [
+        "image120.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职业资格/",
+      "entity_names": "温利婷",
+      "description": "软件设计师资格证书",
+      "_file_path": "/tmp/docx_images/image120.png"
+    },
+    {
+      "id": 35,
+      "title": "学历证书-唐群胜",
+      "images": [
+        "image121.png",
+        "image122.png",
+        "image123.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "唐群胜",
+      "description": "毕业证+学位证+学信网验证",
+      "_file_path": "/tmp/import_ready/35_学历证书-唐群胜.pdf"
+    },
+    {
+      "id": 36,
+      "title": "身份证-唐群胜",
+      "images": [
+        "image124.png",
+        "image125.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "唐群胜",
+      "description": "身份证正反面",
+      "_file_path": "/tmp/import_ready/36_身份证-唐群胜.pdf"
+    },
+    {
+      "id": 37,
+      "title": "学历证书-邓晋熙",
+      "images": [
+        "image126.png",
+        "image127.png",
+        "image128.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "邓晋熙",
+      "description": "毕业证+学位证+学信网验证",
+      "_file_path": "/tmp/import_ready/37_学历证书-邓晋熙.pdf"
+    },
+    {
+      "id": 38,
+      "title": "身份证-邓晋熙",
+      "images": [
+        "image129.png",
+        "image130.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "邓晋熙",
+      "description": "身份证正反面",
+      "_file_path": "/tmp/import_ready/38_身份证-邓晋熙.pdf"
+    },
+    {
+      "id": 39,
+      "title": "学历证书-袁日永",
+      "images": [
+        "image131.png",
+        "image132.png",
+        "image133.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "袁日永",
+      "description": "毕业证+学位证+学信网验证",
+      "_file_path": "/tmp/import_ready/39_学历证书-袁日永.pdf"
+    },
+    {
+      "id": 40,
+      "title": "身份证-袁日永",
+      "images": [
+        "image134.png",
+        "image135.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "袁日永",
+      "description": "身份证正反面",
+      "_file_path": "/tmp/import_ready/40_身份证-袁日永.pdf"
+    },
+    {
+      "id": 41,
+      "title": "学历证书-孙子炜",
+      "images": [
+        "image136.png",
+        "image137.png",
+        "image138.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "孙子炜",
+      "description": "毕业证+学位证+学信网验证",
+      "_file_path": "/tmp/import_ready/41_学历证书-孙子炜.pdf"
+    },
+    {
+      "id": 42,
+      "title": "身份证-孙子炜",
+      "images": [
+        "image139.png",
+        "image140.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "id-card",
+      "folder": "/人员资质/身份证件/",
+      "entity_names": "孙子炜",
+      "description": "身份证正反面",
+      "_file_path": "/tmp/import_ready/42_身份证-孙子炜.pdf"
+    },
+    {
+      "id": 43,
+      "title": "学历证书-梁兆聪",
+      "images": [
+        "image141.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "education-cert",
+      "folder": "/人员资质/学历证书/",
+      "entity_names": "梁兆聪",
+      "description": "毕业证书",
+      "_file_path": "/tmp/docx_images/image141.png"
+    },
+    {
+      "id": 44,
+      "title": "团队项目经验证明",
+      "images": [
+        "image142.png",
+        "image143.png",
+        "image144.png",
+        "image145.png",
+        "image146.png"
+      ],
+      "merge_to_pdf": true,
+      "doc_type": "contract",
+      "folder": "/业绩材料/合同/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "团队项目经验证明材料（技术开发委托合同等）",
+      "_file_path": "/tmp/import_ready/44_团队项目经验证明.pdf"
+    },
+    {
+      "id": 45,
+      "title": "SSOFT高级软件工程师认证-唐群胜",
+      "images": [
+        "image148.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职业资格/",
+      "entity_names": "唐群胜",
+      "description": "SSOFT高级软件工程师认证",
+      "_file_path": "/tmp/docx_images/image148.png"
+    },
+    {
+      "id": 46,
+      "title": "ACAA高级视觉设计师认证-梁兆聪",
+      "images": [
+        "image149.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "professional-cert",
+      "folder": "/人员资质/职业资格/",
+      "entity_names": "梁兆聪",
+      "description": "ACAA中国高级数字艺术设计师认证",
+      "_file_path": "/tmp/docx_images/image149.png"
+    },
+    {
+      "id": 47,
+      "title": "银行开户信息",
+      "images": [
+        "image153.png"
+      ],
+      "merge_to_pdf": false,
+      "doc_type": "",
+      "folder": "/公司资质/",
+      "entity_names": "琪信通达（北京）科技有限公司",
+      "description": "供应商基本存款账户信息",
+      "_file_path": "/tmp/docx_images/image153.png"
+    }
+  ]
+}

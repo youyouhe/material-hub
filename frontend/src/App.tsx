@@ -10,6 +10,7 @@ import BidsPage from './pages/BidsPage';
 import BidDetailPage from './pages/BidDetailPage';
 import ExpiryPage from './pages/ExpiryPage';
 import ChatPage from './pages/ChatPage';
+import KnowledgeGraphPage from './pages/KnowledgeGraphPage';
 import { loadChatHistory, saveChatHistory, type ChatMessage } from './services/api-v2';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminAuditPage from './pages/AdminAuditPage';
@@ -25,7 +26,7 @@ import { X } from 'lucide-react';
 
 const PAGE_TITLES: Record<Page, string> = {
   'documents': '文档', 'search': '搜索', 'upload': '上传', 'bids': '投标管理',
-  'bid-detail': '投标详情', 'expiry': '到期提醒', 'chat': '智能助手',
+  'bid-detail': '投标详情', 'expiry': '到期提醒', 'chat': '智能助手', 'knowledge-graph': '知识图谱',
   'admin-users': '用户管理', 'admin-agents': 'Agent管理', 'admin-doc-types': '文档类型',
   'admin-audit': '审计日志', 'admin-settings': '系统设置', 'admin-transfer': '数据迁移',
   'admin-roles': '角色权限',
@@ -164,6 +165,8 @@ export default function App() {
       case 'chat':
         return <ChatPage folderId={tab.folderId ?? null} folderName={tab.folderName} messages={chatMessages}
           onMessagesChange={handleChatMessagesChange} sessionId={chatSessionId} onSessionChange={setChatSessionId} />;
+      case 'knowledge-graph':
+        return <KnowledgeGraphPage />;
       case 'admin-users': return <AdminUsersPage />;
       case 'admin-audit': return <AdminAuditPage />;
       case 'admin-settings': return <AdminSettingsPage />;
@@ -212,10 +215,16 @@ export default function App() {
           onSelectFolder={handleSelectFolder}
           onLogout={handleLogout}
         />
-        <main className="flex-1 overflow-y-auto bg-cp-bg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-            {renderTab(curTab)}
-          </div>
+        <main className={`flex-1 bg-cp-bg ${curTab.page === 'knowledge-graph' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          {curTab.page === 'knowledge-graph' ? (
+            <div className="h-full">
+              {renderTab(curTab)}
+            </div>
+          ) : (
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+              {renderTab(curTab)}
+            </div>
+          )}
         </main>
       </div>
     </div>

@@ -85,6 +85,24 @@ async def create_entity(data: EntityCreate):
         return entity.to_dict()
 
 
+@router.get("/relations")
+async def list_entity_relations():
+    """List all entity relations — edges for the global knowledge graph.
+
+    Returns every EntityRelation with from/to name + type, directly from
+    the dms_entity_relations table (source of truth, not the KB mirror).
+    """
+    with get_dms_session() as session:
+        relations = session.query(EntityRelation).all()
+        results = []
+        for r in relations:
+            d = r.to_dict()
+            d["from_type"] = r.from_entity.entity_type if r.from_entity else None
+            d["to_type"] = r.to_entity.entity_type if r.to_entity else None
+            results.append(d)
+        return {"results": results, "total": len(results)}
+
+
 @router.get("/{entity_id}")
 async def get_entity(entity_id: int):
     """Get entity detail with document count and children summary."""

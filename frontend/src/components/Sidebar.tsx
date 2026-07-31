@@ -1,14 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   FileText, Search, Upload, Briefcase, Shield, LogOut, Clock,
-  ScrollText, PanelLeftClose, PanelLeft, Settings, Bot, MessageSquare,
+  ScrollText, PanelLeftClose, PanelLeft, Settings, Bot, MessageSquare, Network,
   Sun, Moon, Download,
 } from 'lucide-react';
 import clsx from 'clsx';
 import FolderTree from './FolderTree';
 
 export type Page =
-  | 'documents' | 'search' | 'upload' | 'bids' | 'bid-detail' | 'expiry' | 'chat'
+  | 'documents' | 'search' | 'upload' | 'bids' | 'bid-detail' | 'expiry' | 'chat' | 'knowledge-graph'
   | 'admin-users' | 'admin-agents' | 'admin-doc-types' | 'admin-audit' | 'admin-settings' | 'admin-transfer' | 'admin-roles';
 
 interface SidebarProps {
@@ -82,6 +82,7 @@ export default function Sidebar({
     { page: 'bids', label: '投标管理', icon: <Briefcase className="w-4 h-4" /> },
     { page: 'expiry', label: '到期提醒', icon: <Clock className="w-4 h-4" /> },
     { page: 'chat', label: '智能助手', icon: <MessageSquare className="w-4 h-4" /> },
+    { page: 'knowledge-graph', label: '知识图谱', icon: <Network className="w-4 h-4" /> },
   ];
 
   const adminNav: NavItem[] = [

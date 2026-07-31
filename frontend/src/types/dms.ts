@@ -109,6 +109,19 @@ export interface Entity {
   children?: { id: number; name: string; entity_type: string }[];
 }
 
+export interface EntityRelation {
+  id: number;
+  from_id: number;
+  to_id: number;
+  relation: string; // employed_by | subsidiary_of | parent_of | ...
+  from_name: string;
+  to_name: string;
+  from_type?: string;
+  to_type?: string;
+  attributes?: Record<string, unknown> | null;
+  created_at?: string | null;
+}
+
 export interface Tag {
   id: number;
   name: string;
