@@ -36,4 +36,5 @@ pgvector>=0.3.0
 tiktoken>=0.7.0
 
 # MCP Server(页面启停 MCP SSE server 用;后端以 sys.executable 启动 mcp-server/server.py,故 venv 需装 mcp)
-mcp[cli]>=1.0.0
+# 锁 1.x:mcp 2.0 移除了 mcp.server.fastmcp,server.py 不兼容
+mcp[cli]>=1.16.0,<2.0
