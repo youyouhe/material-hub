@@ -209,7 +209,9 @@ def mcp_start():
         pass
 
     # Kill any stale process on the MCP port
-    result = subprocess.run(["lsof", "-t", f"-i:{port}"], capture_output=True, text=True)
+    # 只匹配 LISTEN 套接字:-i:{port} 会同时匹配本进程发出的状态探测连接(TIME_WAIT),
+    # 导致把后端自己 kill 掉
+    result = subprocess.run(["lsof", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"], capture_output=True, text=True)
     for pid in result.stdout.strip().split("\n"):
         if pid.strip():
             try: os.kill(int(pid.strip()), 9)
@@ -249,7 +251,8 @@ def mcp_stop():
     """Stop MCP SSE server."""
     import subprocess, os as _os
     port = _mcp_port()
-    result = subprocess.run(["lsof", "-t", f"-i:{port}"], capture_output=True, text=True)
+    # 同上:只杀 LISTEN 进程,避免误杀本进程的状态探测连接
+    result = subprocess.run(["lsof", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"], capture_output=True, text=True)
     pids = result.stdout.strip().split("\n")
     killed = []
     for pid in pids:
