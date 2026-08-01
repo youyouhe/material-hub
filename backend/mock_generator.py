@@ -871,6 +871,7 @@ def generate_mock(
                 logger.info("Mock document record created: id=%d, title=%s", doc.id, doc.title)
         except Exception as e:
             logger.warning("Failed to create mock document record: %s", e)
+            logger.warning("Traceback:", exc_info=True)
 
     # Build image URL
     image_url = f"/api/v2/files/mock/{img_filename}"
