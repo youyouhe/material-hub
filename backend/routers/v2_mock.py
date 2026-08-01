@@ -22,6 +22,7 @@ MOCK_DIR = DATA_DIR / "dms_files" / "mock"
 class MockGenerateRequest(BaseModel):
     doc_type_code: str
     entity_name: Optional[str] = None
+    person_name: Optional[str] = None
     create_record: bool = True
 
 
@@ -59,6 +60,7 @@ async def generate_mock(body: MockGenerateRequest):
         result = generate_mock(
             body.doc_type_code,
             entity_name=body.entity_name,
+            person_name=body.person_name,
             create_record=body.create_record,
         )
     except Exception as e:

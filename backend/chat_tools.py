@@ -275,7 +275,11 @@ TOOL_DEFINITIONS = [
                     },
                     "entity_name": {
                         "type": "string",
-                        "description": "关联的公司或个人名称（可选），用于自定义文档中的实体名称"
+                        "description": "关联的公司名称（可选），用于自定义文档中的公司名称"
+                    },
+                    "person_name": {
+                        "type": "string",
+                        "description": "关联的人员姓名（可选），用于自定义文档中的人员姓名。如身份证的姓名、营业执照的法定代表人"
                     },
                     "create_record": {
                         "type": "boolean",
@@ -1082,16 +1086,15 @@ def _tool_kb_graph_explore(entity_name: str, depth: int = 1, **kwargs) -> str:
             {"error": {"code": "ENTITY_NOT_FOUND", "message": data["error"]}},
             ensure_ascii=False,
         )
-
     return json.dumps({
         "entity": data.get("entity"),
         "related_entities": data.get("related_entities", []),
         "relations": data.get("relations", []),
-        "events": data.get("events", []),
     }, ensure_ascii=False)
 
 
 def _tool_generate_mock_document(doc_type_code: str, entity_name: str = None,
+                                  person_name: str = None,
                                   create_record: bool = True, **kwargs) -> str:
     """Generate a mock document with data and PNG image."""
     try:
@@ -1106,7 +1109,8 @@ def _tool_generate_mock_document(doc_type_code: str, entity_name: str = None,
         }, ensure_ascii=False)
 
     try:
-        result = generate_mock(doc_type_code, entity_name=entity_name, create_record=create_record)
+        result = generate_mock(doc_type_code, entity_name=entity_name,
+                               person_name=person_name, create_record=create_record)
     except Exception as e:
         logger.error(f"Mock generation failed: {e}", exc_info=True)
         return json.dumps({"error": f"Mock generation failed: {str(e)}"}, ensure_ascii=False)

@@ -422,7 +422,7 @@ MOCK_TEMPLATES: Dict[str, dict] = {
 
 # ── Mock data generation ──────────────────────────────────────────────
 
-def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None) -> dict:
+def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, person_name: Optional[str] = None) -> dict:
     """Generate mock metadata for a given document type code."""
     template = MOCK_TEMPLATES.get(doc_type_code)
     if not template:
@@ -439,7 +439,18 @@ def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None) ->
         elif doc_type_code in ("contract", "bid-document", "acceptance-report"):
             data["party_b"] = entity_name
         elif doc_type_code in ("education-cert", "id-card", "professional-cert"):
-            pass  # keep random person data
+            pass  # keep random person data — use person_name instead
+
+    # Override person name fields if person_name is provided
+    if person_name:
+        if doc_type_code == "business-license":
+            data["legal_person"] = person_name
+        elif doc_type_code == "company-profile":
+            data["legal_person"] = person_name
+        elif doc_type_code in ("id-card", "education-cert", "professional-cert"):
+            data["name"] = person_name
+        elif doc_type_code == "authorization":
+            data["authorized_party"] = person_name
 
     return data
 
@@ -536,22 +547,13 @@ def _draw_red_stamp(draw, center_x, center_y, text, size=100):
         [center_x - r + 8, center_y - r + 8, center_x + r - 8, center_y + r - 8],
         outline=(180, 30, 30), width=1
     )
-    # Stamp text
-    font = _FONT_LARGE or _FONT
-    if font:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        tx = center_x - tw // 2
-        ty = center_y - th // 2
-        draw.text((tx, ty), text, fill=(200, 40, 40), font=font)
-
 
 def generate_mock_image(
     doc_type_name: str,
     doc_type_code: str,
     mock_data: dict,
     entity_name: Optional[str] = None,
+    person_name: Optional[str] = None,
 ) -> bytes:
     """
     Generate a PNG image that looks like a document scan.
@@ -766,6 +768,7 @@ def generate_mock_image(
 def generate_mock(
     doc_type_code: str,
     entity_name: Optional[str] = None,
+    person_name: Optional[str] = None,
     create_record: bool = True,
 ) -> dict:
     """
@@ -790,12 +793,11 @@ def generate_mock(
             raise ValueError(f"Unknown doc type: {doc_type_code}")
         doc_type_name = dt.name
         dt_id = dt.id
-        category = dt.category or "general"
     # Generate mock data
-    mock_data = generate_mock_data(doc_type_code, entity_name)
+    mock_data = generate_mock_data(doc_type_code, entity_name, person_name)
 
     # Generate PNG image
-    png_bytes = generate_mock_image(doc_type_name, doc_type_code, mock_data, entity_name)
+    png_bytes = generate_mock_image(doc_type_name, doc_type_code, mock_data, entity_name, person_name)
 
     # Save to mock directory
     company_name = entity_name or _random_company_name()
