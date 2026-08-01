@@ -875,32 +875,16 @@ def generate_mock(
         for canonical_key, canonical_value in _existing_overrides.items():
             if not canonical_value:
                 continue
-            # Exact match first
+            # Apply to all matching fields (exact + aliases)
             if canonical_key in mock_data:
                 mock_data[canonical_key] = canonical_value
-                logger.info("Entity consistency: using existing '%s' = '%s' for entity %s",
-                            canonical_key, canonical_value, entity_name)
-            # Try aliases
             for alias in _FIELD_ALIASES.get(canonical_key, []):
                 if alias in mock_data:
                     mock_data[alias] = canonical_value
-                    logger.info("Entity consistency: using existing '%s' → '%s' = '%s' for entity %s",
-                                canonical_key, alias, canonical_value, entity_name)
-                    break
+            logger.info("Entity consistency: using existing '%s' for entity %s",
+                        canonical_key, entity_name)
 
     # Generate PNG image
-    png_bytes = generate_mock_image(doc_type_name, doc_type_code, mock_data, entity_name, person_name)
-
-    # Save to mock directory
-    company_name = entity_name or _random_company_name()
-    safe_name = company_name.replace("(", "（").replace(")", "）").replace(" ", "_")
-    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    filename_base = f"{safe_name}_{doc_type_code}_{ts}"
-    img_filename = f"{filename_base}.png"
-    img_path = MOCK_DIR / img_filename
-    img_path.write_bytes(png_bytes)
-    logger.info("Mock image saved: %s", img_path)
-
     document_id = None
     if create_record:
         try:
