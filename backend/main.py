@@ -114,6 +114,7 @@ async def auth_middleware(request: Request, call_next):
 
         logging.getLogger("materialhub.auth").warning("MW: before agent check, token=%s", token[:20] if token else "None")
         if token and token.startswith("mh-agent-"):
+            logging.getLogger("materialhub.auth").warning("MW: ENTERED agent block, token=%s", token[:20])
             from dms_models import get_dms_session, ApiAgent
             from datetime import datetime
             agent_info = None
