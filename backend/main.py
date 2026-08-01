@@ -112,7 +112,7 @@ async def auth_middleware(request: Request, call_next):
             request.state.user_role = "admin"
             return await call_next(request)
 
-        # Check API agent tokens (mh-agent-*)
+        logging.getLogger("materialhub.auth").warning("MW: before agent check, token=%s", token[:20] if token else "None")
         if token and token.startswith("mh-agent-"):
             from dms_models import get_dms_session, ApiAgent
             from datetime import datetime
