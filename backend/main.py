@@ -92,16 +92,14 @@ async def auth_middleware(request: Request, call_next):
 
     # Protect all /api/* paths except auth/login
     if request.url.path.startswith("/api/"):
+        print(f"[AUTH-DBG] path={request.url.path} auth_header={'yes' if request.headers.get('authorization') else 'no'}", flush=True)
         authorization = request.headers.get("authorization")
-
         # Check if token is in query params (for image preview)
         token = None
         if authorization and authorization.startswith("Bearer "):
             token = authorization.replace("Bearer ", "")
-            import logging
-            _l = logging.getLogger("materialhub.auth.middleware")
-            _l.warning(f"Bearer token: prefix={token[:12]}..., path={request.url.path}")
         else:
+            query_params = dict(request.query_params)
             token = query_params.get("token")
 
         # Support static API key for MCP / external integrations (legacy)
