@@ -13,10 +13,12 @@ services:
     restart: unless-stopped
 
   backend:
-    build: ./backend
-    container_name: materialhub-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "${BACKEND_PORT:-8101}:8101"
+      - "${MCP_PORT:-8202}:8202"
     volumes:
       - ./backend/data:/app/data
     environment:
@@ -36,6 +38,11 @@ services:
       - PG_HOST=${PG_HOST:-postgres}
       - PG_PORT=${PG_PORT:-5432}
       - PG_DATABASE=${PG_DATABASE:-materialhub_kb}
+      - MCP_HOST=${MCP_HOST:-0.0.0.0}
+      - MCP_PORT=${MCP_PORT:-8202}
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-sse}
+      - MATERIALHUB_API_URL=${MATERIALHUB_API_URL:-http://localhost:8101}
+      - MCP_PUBLIC_URL=${MCP_PUBLIC_URL:-}
       - PG_USER=${PG_USER:-materialhub}
       - PG_PASSWORD=${PG_PASSWORD:?PG_PASSWORD must be set in .env}
     depends_on:

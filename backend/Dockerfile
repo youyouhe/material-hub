@@ -5,18 +5,21 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-wqy-microhei \
+    lsof \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend/ .
+COPY mcp-server/ /mcp-server/
+RUN pip install --no-cache-dir -r /mcp-server/requirements.txt
 
 RUN groupadd -r app && useradd -r -g app -d /app app && \
     mkdir -p /app/data/files /app/data/docs && \
-    chown -R app:app /app
+    chown -R app:app /app /mcp-server
 
 USER app
 
