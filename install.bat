@@ -151,7 +151,7 @@ echo   启动服务:  start.bat
 echo   停止服务:  stop.bat
 echo.
 echo   配置文件:  backend\.env
-echo   默认账号:  admin / admin123
+echo   默认账号:  首次启动随机生成（查看启动日志）
 echo.
 echo   前端地址:  http://localhost:3100
 echo   后端地址:  http://localhost:8201

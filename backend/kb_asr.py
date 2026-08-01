@@ -21,6 +21,10 @@ ASR_API_KEY = os.getenv("ASR_API_KEY", "")
 ASR_API_URL = os.getenv("ASR_API_URL", "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions")
 ASR_MODEL = os.getenv("ASR_MODEL", "glm-asr-2512")
 
+# Validate on import: warn if ASR is enabled but no key configured
+if ASR_ENABLED and not ASR_API_KEY:
+    logger.warning("ASR is enabled (ASR_ENABLED=true) but ASR_API_KEY is not set — audio/video ingestion will fail")
+
 # FFmpeg for audio conversion
 FFMPEG = os.getenv("FFMPEG_PATH", "ffmpeg")
 FFPROBE = os.getenv("FFPROBE_PATH", "ffprobe")

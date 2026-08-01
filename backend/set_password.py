@@ -59,7 +59,6 @@ def main():
         db.commit()
 
         print(f"✓ 成功修改用户 '{username}' 的密码")
-        print(f"  新密码: {new_password}")
 
 
 if __name__ == "__main__":

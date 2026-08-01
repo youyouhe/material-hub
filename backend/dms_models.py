@@ -465,7 +465,16 @@ def _seed_dms_default_admin():
     with get_dms_session() as session:
         if session.query(DmsUser).count() == 0:
             default_username = _os.getenv("AUTH_DEFAULT_USERNAME", "admin")
-            default_password = _os.getenv("AUTH_DEFAULT_PASSWORD", "admin123")
+            default_password = _os.getenv("AUTH_DEFAULT_PASSWORD")
+            if not default_password:
+                import secrets as _secrets
+                default_password = _secrets.token_urlsafe(12)
+                logger.warning("=" * 60)
+                logger.warning("No AUTH_DEFAULT_PASSWORD set — generated random admin password:")
+                logger.warning("  Username: %s", default_username)
+                logger.warning("  Password: %s", default_password)
+                logger.warning("Save this password now; it will not be shown again.")
+                logger.warning("=" * 60)
             password_hash = bcrypt.hashpw(
                 default_password.encode('utf-8'), bcrypt.gensalt()
             ).decode('utf-8')

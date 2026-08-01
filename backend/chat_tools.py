@@ -261,6 +261,40 @@ TOOL_DEFINITIONS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_mock_document",
+            "description": "根据文档类型生成模拟文档（含mock数据和PNG图片）。用于测试、演示或占位。支持营业执照、ISO认证、合同、身份证、学历证书等全部14种文档类型。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_type_code": {
+                        "type": "string",
+                        "description": "文档类型代码，如business-license、iso-cert、contract、id-card、education-cert、professional-cert、qualification-cert、honor-award、acceptance-report、bid-document、authorization、invoice、product-brochure、company-profile、technical-doc"
+                    },
+                    "entity_name": {
+                        "type": "string",
+                        "description": "关联的公司或个人名称（可选），用于自定义文档中的实体名称"
+                    },
+                    "create_record": {
+                        "type": "boolean",
+                        "description": "是否创建数据库记录，默认true",
+                        "default": True
+                    }
+                },
+                "required": ["doc_type_code"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_mock_types",
+            "description": "列出所有可生成模拟文档的类型代码。",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
 ]
 
 
@@ -305,12 +339,15 @@ def execute_tool(name: str, arguments: dict) -> str:
             return _tool_kb_deep_search(**arguments)
         elif name == "kb_graph_explore":
             return _tool_kb_graph_explore(**arguments)
+        elif name == "generate_mock_document":
+            return _tool_generate_mock_document(**arguments)
+        elif name == "list_mock_types":
+            return _tool_list_mock_types(**arguments)
         else:
             return json.dumps({"error": f"Unknown tool: {name}"}, ensure_ascii=False)
     except Exception as e:
         logger.error(f"Tool execution error ({name}): {e}", exc_info=True)
         return json.dumps({"error": str(e)}, ensure_ascii=False)
-
 
 def _tool_search_documents(query: str, limit: int = 10) -> str:
     """FTS search for documents."""
@@ -1052,3 +1089,57 @@ def _tool_kb_graph_explore(entity_name: str, depth: int = 1, **kwargs) -> str:
         "relations": data.get("relations", []),
         "events": data.get("events", []),
     }, ensure_ascii=False)
+
+
+def _tool_generate_mock_document(doc_type_code: str, entity_name: str = None,
+                                  create_record: bool = True, **kwargs) -> str:
+    """Generate a mock document with data and PNG image."""
+    try:
+        from mock_generator import generate_mock, list_mock_types
+    except ImportError as e:
+        return json.dumps({"error": f"Mock generator not available: {e}"}, ensure_ascii=False)
+
+    valid_types = list_mock_types()
+    if doc_type_code not in valid_types:
+        return json.dumps({
+            "error": f"Unknown doc_type_code: {doc_type_code}. Valid types: {', '.join(valid_types)}"
+        }, ensure_ascii=False)
+
+    try:
+        result = generate_mock(doc_type_code, entity_name=entity_name, create_record=create_record)
+    except Exception as e:
+        logger.error(f"Mock generation failed: {e}", exc_info=True)
+        return json.dumps({"error": f"Mock generation failed: {str(e)}"}, ensure_ascii=False)
+
+    return json.dumps({
+        "success": True,
+        "doc_type_code": result["doc_type_code"],
+        "doc_type_name": result["doc_type_name"],
+        "mock_data": result["mock_data"],
+        "image_url": result.get("image_url", ""),
+        "document_id": result.get("document_id"),
+        "message": f"已生成模拟{result['doc_type_name']}文档"
+    }, ensure_ascii=False)
+
+
+def _tool_list_mock_types(**kwargs) -> str:
+    """List all available mock document types."""
+    try:
+        from mock_generator import list_mock_types
+        types = list_mock_types()
+    except ImportError as e:
+        return json.dumps({"error": f"Mock generator not available: {e}"}, ensure_ascii=False)
+
+    from dms_models import get_dms_session, DocType
+    with get_dms_session() as session:
+        doc_types = session.query(DocType).filter(DocType.code.in_(types)).all()
+        type_map = {dt.code: dt.name for dt in doc_types}
+
+    result = []
+    for code in types:
+        result.append({
+            "code": code,
+            "name": type_map.get(code, code),
+        })
+
+    return json.dumps({"mock_types": result, "total": len(result)}, ensure_ascii=False)

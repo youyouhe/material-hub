@@ -15,7 +15,7 @@ import concurrent.futures
 import requests
 
 # ── 配置 ────────────────────────────────────────────────────────────────────
-GLM_API_KEY  = os.getenv("GLM_API_KEY", "")
+GLM_API_KEY  = os.environ.get("ASR_API_KEY", "")
 GLM_API_URL  = "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions"
 GLM_MODEL    = "glm-asr-2512"
 

@@ -223,7 +223,7 @@ ${GREEN}╚═══════════════════════
   访问地址 :
      前端   : http://${ip}:${FRONTEND_PORT}
      后端   : http://${ip}:${BACKEND_PORT}/docs
-     默认账号 : admin / admin123
+     默认账号 : 首次启动时随机生成，请查看启动日志（docker-compose logs backend \| grep Password）
 
   常用命令(在 ${APP_DIR} 下执行):
      查看日志 : ${COMPOSE_CMD} logs -f

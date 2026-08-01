@@ -23,7 +23,7 @@ from dms_models import init_dms_db
 from seed_data import seed_all
 from kb_database import init_kb_db
 from routers import auth  # Legacy auth — keep for transition period
-from routers import v2_folders, v2_doc_types, v2_documents, v2_files, v2_entities, v2_tags, v2_compat, v2_upload, v2_search, v2_expiry, v2_admin, v2_audit, v2_bids, v2_bid_requirements, v2_migrate, v2_settings, v2_agents, v2_chat, v2_auth, v2_transfer, v2_roles, v2_kb, v2_complete
+from routers import v2_folders, v2_doc_types, v2_documents, v2_files, v2_entities, v2_tags, v2_compat, v2_upload, v2_search, v2_expiry, v2_admin, v2_audit, v2_bids, v2_bid_requirements, v2_migrate, v2_settings, v2_agents, v2_chat, v2_auth, v2_transfer, v2_roles, v2_kb, v2_complete, v2_mock
 from auth import validate_session
 
 logging.basicConfig(
@@ -198,6 +198,7 @@ app.include_router(v2_auth.router)
 app.include_router(v2_transfer.router)
 app.include_router(v2_roles.router)
 app.include_router(v2_kb.router)
+app.include_router(v2_mock.router)
 
 
 @app.on_event("startup")

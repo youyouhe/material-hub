@@ -122,8 +122,8 @@ async def create_user(data: CreateUserRequest):
     if data.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {', '.join(VALID_ROLES)}")
 
-    if len(data.password) < 4:
-        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+    if len(data.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
     password_hash = _hash_password(data.password)
 
@@ -177,8 +177,8 @@ async def change_role(user_id: int, data: ChangeRoleRequest, request: Request):
 @router.put("/users/{user_id}/password", dependencies=[require_role("admin")])
 async def reset_password(user_id: int, data: ResetPasswordRequest):
     """Reset a user's password."""
-    if len(data.new_password) < 4:
-        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
     with get_dms_session() as dms_db:
         user = dms_db.query(DmsUser).filter(DmsUser.id == user_id).first()

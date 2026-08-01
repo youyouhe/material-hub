@@ -72,3 +72,4 @@ check_timeout.sh
 
 # 备份目录
 backend/backup_*/
+.claude/

@@ -73,8 +73,8 @@ def main():
     # Get new password (with confirmation)
     while True:
         password1 = getpass.getpass("新密码: ")
-        if len(password1) < 6:
-            print("错误: 密码至少需要6个字符")
+        if len(password1) < 8:
+            print("错误: 密码至少需要8个字符")
             continue
 
         password2 = getpass.getpass("确认密码: ")

@@ -94,7 +94,7 @@ Copy `.env.example` to `.env`. Key variables:
 | `OCR_SERVICE_URL` | External OCR service (e.g. PaddleOCR) |
 | `LLM_PROVIDER` | `deepseek` \| `openrouter` \| `anthropic` |
 | `DEEPSEEK_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` | LLM credentials |
-| `AUTH_DEFAULT_USERNAME` / `AUTH_DEFAULT_PASSWORD` | Default admin (`admin` / `admin123`) |
+| `AUTH_DEFAULT_USERNAME` / `AUTH_DEFAULT_PASSWORD` | Default admin credentials (password auto-generated if unset) |
 
 ## Key Conventions
 
