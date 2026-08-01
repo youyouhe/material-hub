@@ -92,13 +92,14 @@ async def auth_middleware(request: Request, call_next):
 
     # Protect all /api/* paths except auth/login
     if request.url.path.startswith("/api/"):
-        print(f"[AUTH-DBG] path={request.url.path} auth_header={'yes' if request.headers.get('authorization') else 'no'}", flush=True)
         authorization = request.headers.get("authorization")
+
         # Check if token is in query params (for image preview)
         token = None
         if authorization and authorization.startswith("Bearer "):
             token = authorization.replace("Bearer ", "")
         else:
+            # Try to get token from query params
             query_params = dict(request.query_params)
             token = query_params.get("token")
 
@@ -124,17 +125,15 @@ async def auth_middleware(request: Request, call_next):
                     agent.last_used_at = datetime.utcnow()
             # Session closed before call_next to avoid SQLite locking
             if agent_info:
-                import logging
-                _logger = logging.getLogger("materialhub.auth.middleware")
-                _logger.warning(f"Agent auth OK: id={agent_info[0]}, role={agent_info[1]}, path={request.url.path}")
                 request.state.user_id = None
+                request.state.user_role = agent_info[1]
+                request.state.agent_id = agent_info[0]
                 return await call_next(request)
             else:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid or inactive agent token"}
                 )
-
 
         if not token:
             return JSONResponse(
