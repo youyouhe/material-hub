@@ -869,7 +869,7 @@ def generate_mock(
     _FIELD_ALIASES = {
         "legal_person": ["authorizer_legal_person", "legal_representative", "contact_person"],
         "unified_social_credit_code": ["credit_code"],
-        "address": ["party_a_address", "party_b_address"],
+        "address": ["party_b_address"],
     }
     if _existing_overrides:
         for canonical_key, canonical_value in _existing_overrides.items():
