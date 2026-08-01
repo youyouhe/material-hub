@@ -112,29 +112,29 @@ async def auth_middleware(request: Request, call_next):
 
         # Check API agent tokens (mh-agent-*)
         if token and token.startswith("mh-agent-"):
-            from dms_models import get_dms_session, ApiAgent
-            from datetime import datetime
-            agent_info = None
-            with get_dms_session() as dms_db:
-                agent = dms_db.query(ApiAgent).filter(
-                    ApiAgent.token == token,
-                    ApiAgent.is_active == True,
-                ).first()
-                if agent:
-                    agent_info = (agent.id, agent.role)
-                    agent.last_used_at = datetime.utcnow()
-            # Session closed before call_next to avoid SQLite locking
-            if agent_info:
-                request.state.user_id = None
-                request.state.user_role = agent_info[1]
-                request.state.agent_id = agent_info[0]
-                return await call_next(request)
-            else:
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Invalid or inactive agent token"}
-                )
-
+            try:
+                from dms_models import get_dms_session, ApiAgent
+                from datetime import datetime
+                agent_info = None
+                with get_dms_session() as dms_db:
+                    agent = dms_db.query(ApiAgent).filter(
+                        ApiAgent.token == token,
+                        ApiAgent.is_active == True,
+                    ).first()
+                    if agent:
+                        agent_info = (agent.id, agent.role)
+                        agent.last_used_at = datetime.utcnow()
+                if agent_info:
+                    request.state.user_id = None
+                    request.state.user_role = agent_info[1]
+                    request.state.agent_id = agent_info[0]
+                    return await call_next(request)
+                else:
+                    return JSONResponse(status_code=401, content={"detail": "Invalid or inactive agent token"})
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                return JSONResponse(status_code=500, content={"detail": f"Agent auth error: {e}"})
         if not token:
             return JSONResponse(
                 status_code=401,
