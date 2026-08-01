@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Python 后端 ----
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: 后端 lint (ruff)
+        run: |
+          pip install ruff
+          ruff check backend/
+
+      - name: 后端依赖安装
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: 后端 import 检查
+        run: |
+          cd backend
+          python -c "
+          import importlib
+          mods = ['main', 'dms_models', 'dms_processor', 'dms_search', 'llm_provider',
+                  'kb_database', 'kb_models', 'kb_ingest', 'kb_search', 'kb_multihop',
+                  'kb_graph', 'kb_extraction', 'kb_entity_sync', 'kb_event_ingest',
+                  'kb_chunking', 'kb_embedding', 'kb_asr', 'kb_docx', 'chat_tools']
+          failed = []
+          for m in mods:
+              try: importlib.import_module(m)
+              except Exception as e: failed.append((m, str(e)[:80]))
+          if failed:
+              for m, e in failed: print(f'  ✗ {m}: {e}')
+              raise SystemExit(f'❌ {len(failed)} 个模块导入失败')
+          print(f'✓ {len(mods)} 个核心模块导入成功')
+          "
+
+      # ---- Node 前端 ----
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 前端依赖安装
+        run: |
+          cd frontend
+          npm ci
+
+      - name: 前端类型检查 (tsc)
+        run: |
+          cd frontend
+          npx tsc --noEmit
+
+      - name: 前端构建 (vite build)
+        run: |
+          cd frontend
+          npm run build
