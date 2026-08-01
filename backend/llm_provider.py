@@ -248,7 +248,7 @@ class DeepSeekProvider(LLMProvider):
             base_url=self.base_url,
             api_key=self.api_key,
             texts=texts,
-            model=model or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+            model=model or self.model,
             timeout=self.timeout,
             provider_name="DeepSeek",
         )
@@ -364,7 +364,7 @@ class OpenRouterProvider(LLMProvider):
             base_url="https://openrouter.ai/api",
             api_key=self.api_key,
             texts=texts,
-            model=model or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+            model=model or self.model,
             timeout=self.timeout,
             provider_name="OpenRouter",
             extra_headers={"HTTP-Referer": self.site_url, "X-Title": self.app_name},
@@ -500,7 +500,7 @@ class AnthropicProvider(LLMProvider):
                 base_url=embedding_base,
                 api_key=self.api_key,
                 texts=texts,
-                model=model or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+                model=model or self.model,
                 timeout=self.timeout,
                 provider_name="Anthropic(embed)",
             )
