@@ -505,6 +505,21 @@ async def create_revision(doc_id: int, data: RevisionCreate, request: Request):
         )
         session.add(rev)
         session.flush()
+
+        # Auto-clear mock flags when user creates a new revision (real content replacing mock)
+        if doc.meta_json:
+            try:
+                meta = json.loads(doc.meta_json)
+                if meta.get("mock") and meta.get("mock_reason") == "generated_for_requirement":
+                    meta.pop("mock", None)
+                    meta.pop("mock_reason", None)
+                    doc.meta_json = json.dumps(meta, ensure_ascii=False)
+                    # Remove MOCK tag from title
+                    doc.title = doc.title.replace("（MOCK-待替换）", "").replace("(MOCK-待替换)", "")
+                    logger.info("Cleared mock flags on doc %d (revision %d created)", doc_id, rev.id)
+            except Exception:
+                pass
+
         return rev.to_dict()
 
 
