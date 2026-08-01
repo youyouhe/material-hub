@@ -836,15 +836,21 @@ def generate_mock(
                         "requires_user_replacement": True,
                         "idempotent": True,
                     }
-    # Entity consistency — reuse existing entity data for same entity_name
     _existing_overrides = {}
     if entity_name:
         from dms_models import Entity, DocumentEntity, DmsDocument
         with get_dms_session() as session:
-            ent = session.query(Entity).filter(
-                Entity.name == entity_name
+            # Find ALL entities with this name — org first, then person
+            org_ent = session.query(Entity).filter(
+                Entity.name == entity_name, Entity.entity_type == "org"
             ).first()
-            if ent:
+            person_ent = session.query(Entity).filter(
+                Entity.name == entity_name, Entity.entity_type == "person"
+            ).first()
+            # Collect overrides from org entity + its linked documents
+            for ent in (org_ent, person_ent):
+                if not ent:
+                    continue
                 if ent.attributes:
                     try: _existing_attrs = json.loads(ent.attributes)
                     except: _existing_attrs = {}
