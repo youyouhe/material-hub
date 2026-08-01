@@ -90,6 +90,8 @@ async def auth_middleware(request: Request, call_next):
     if request.url.path in exempt_paths:
         return await call_next(request)
 
+    logging.getLogger("materialhub.auth").warning("MW: path=%s method=%s", request.url.path, request.method)
+
     # Protect all /api/* paths except auth/login
     if request.url.path.startswith("/api/"):
         authorization = request.headers.get("authorization")
@@ -110,36 +112,31 @@ async def auth_middleware(request: Request, call_next):
             request.state.user_role = "admin"
             return await call_next(request)
 
-        import logging as _logging
-        _log = _logging.getLogger("materialhub")
-        _log.warning(f"Pre-agent check: token={token[:15] if token else 'None'}... path={request.url.path}")
-
         # Check API agent tokens (mh-agent-*)
         if token and token.startswith("mh-agent-"):
-            try:
-                from dms_models import get_dms_session, ApiAgent
-                logger = logging.getLogger("materialhub")
-                logger.warning(f"Agent lookup: token_prefix=mh-agent, path={request.url.path}")
-                from datetime import datetime
-                with get_dms_session() as dms_db:
-                    agent = dms_db.query(ApiAgent).filter(
-                        ApiAgent.token == token,
-                        ApiAgent.is_active == True,
-                    ).first()
-                    if agent:
-                        agent_info = (agent.id, agent.role)
-                        agent.last_used_at = datetime.utcnow()
-                logger.warning(f"Agent query result: found={agent_info is not None}, info={agent_info}")
-                    request.state.user_id = None
-                    request.state.user_role = agent_info[1]
-                    request.state.agent_id = agent_info[0]
-                    return await call_next(request)
-                else:
-                    return JSONResponse(status_code=401, content={"detail": "Invalid or inactive agent token"})
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                return JSONResponse(status_code=500, content={"detail": f"Agent auth error: {e}"})
+            from dms_models import get_dms_session, ApiAgent
+            from datetime import datetime
+            agent_info = None
+            with get_dms_session() as dms_db:
+                agent = dms_db.query(ApiAgent).filter(
+                    ApiAgent.token == token,
+                    ApiAgent.is_active == True,
+                ).first()
+                if agent:
+                    agent_info = (agent.id, agent.role)
+                    agent.last_used_at = datetime.utcnow()
+            # Session closed before call_next to avoid SQLite locking
+            if agent_info:
+                request.state.user_id = None
+                request.state.user_role = agent_info[1]
+                request.state.agent_id = agent_info[0]
+                return await call_next(request)
+            else:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or inactive agent token"}
+                )
+
         if not token:
             return JSONResponse(
                 status_code=401,
