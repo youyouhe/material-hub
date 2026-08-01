@@ -717,6 +717,15 @@ export async function testLlm(): Promise<{
   return request(`${BASE}/settings/llm/test`, { method: 'POST' });
 }
 
+export async function testEmbedding(): Promise<{
+  available: boolean;
+  message: string;
+  detail?: { key_used: string; key_source: string; model: string; base_url: string; dimensions: string };
+}> {
+  return request(`${BASE}/settings/embedding/test`, { method: 'POST' });
+}
+
+
 // ============================================================
 // Reprocess (OCR + LLM re-extraction)
 // ============================================================

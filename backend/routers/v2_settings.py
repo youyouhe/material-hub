@@ -496,6 +496,57 @@ async def test_llm():
         }
 
 
+@router.post("/embedding/test", dependencies=[require_role("admin")])
+async def test_embedding():
+    """Test the embedding configuration with a real API call."""
+    import os
+    from llm_provider import get_embedding_provider
+
+    db_key = get_setting("embedding_api_key")
+    env_key = os.getenv("EMBEDDING_API_KEY", "")
+    active_key = db_key or env_key
+    key_source = "db" if db_key else ("env" if env_key else "none")
+
+    base_url = get_setting("embedding_base_url") or os.getenv("EMBEDDING_BASE_URL", "")
+    model = get_setting("embedding_model") or os.getenv("EMBEDDING_MODEL", "default")
+    dims = get_setting("embedding_dimensions") or os.getenv("EMBEDDING_DIMENSIONS", "")
+
+    if not base_url and not active_key:
+        return {
+            "available": False,
+            "message": "未配置独立的 Embedding 端点，将复用 LLM 提供者",
+            "detail": {"key_used": "(未配置独立embedding)", "key_source": "none", "model": model, "base_url": base_url or "LLM provider", "dimensions": dims},
+        }
+
+    try:
+        provider = get_embedding_provider()
+        result = provider.embed(["测试文本 test embedding"])
+        dim = len(result[0]) if result else 0
+        return {
+            "available": True,
+            "message": f"Embedding 服务可用 (向量维度: {dim})",
+            "detail": {
+                "key_used": _mask_sensitive("embedding_api_key", active_key) if active_key else "(未配置)",
+                "key_source": key_source,
+                "model": model,
+                "base_url": base_url or "LLM provider",
+                "dimensions": str(dim),
+            },
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "message": f"Embedding 不可用: {str(e)[:200]}",
+            "detail": {
+                "key_used": _mask_sensitive("embedding_api_key", active_key) if active_key else "(未配置)",
+                "key_source": key_source,
+                "model": model,
+                "base_url": base_url or "LLM provider",
+                "dimensions": dims,
+            },
+        }
+
+
 # ============================================================
 # Wildcard routes — MUST be last
 # ============================================================

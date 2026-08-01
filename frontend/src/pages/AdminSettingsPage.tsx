@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Settings, Save, TestTube2, Eye, EyeOff, Brain, Server, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import { getSettings, batchUpdateSettings, testOcr, testLlm } from '../services/api-v2';
+import { getSettings, batchUpdateSettings, testOcr, testLlm, testEmbedding } from '../services/api-v2';
 import type { SystemSettings } from '../types/dms';
 
 const OCR_PROVIDERS = [
@@ -119,9 +119,26 @@ export default function AdminSettingsPage() {
     } finally { setTestingLlm(false); }
   };
 
+  const [embedTestResult, setEmbedTestResult] = useState<{ available: boolean; message: string; detail?: { key_used: string; key_source: string; model: string; base_url: string; dimensions: string } } | null>(null);
+  const [testingEmbed, setTestingEmbed] = useState(false);
+  const handleTestEmbed = async () => {
+    setTestingEmbed(true);
+    setEmbedTestResult(null);
+    try {
+      const result = await testEmbedding();
+      setEmbedTestResult(result);
+      if (result.available) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Embedding测试失败');
+    } finally { setTestingEmbed(false); }
+  };
+
   const ocrProvider = form.ocr_provider || 'deepseek';
   const llmProvider = form.llm_provider || 'deepseek';
-
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -342,7 +359,31 @@ export default function AdminSettingsPage() {
                 <Save className="w-4 h-4" />
                 {saving ? '保存中...' : '保存设置'}
               </button>
+              <button
+                onClick={handleTestEmbed}
+                disabled={testingEmbed}
+                className="cp-btn-ghost flex items-center gap-1 px-4 py-2 text-sm rounded-lg border border-cp-border"
+              >
+                <TestTube2 className="w-4 h-4" />
+                {testingEmbed ? '测试中...' : '测试Embedding'}
+              </button>
             </div>
+
+            {embedTestResult && (
+              <div className={`mt-4 p-3 rounded-lg text-xs ${embedTestResult.available ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
+                <div className={`font-medium ${embedTestResult.available ? 'text-green-400' : 'text-red-400'}`}>
+                  {embedTestResult.available ? '✅' : '❌'} {embedTestResult.message}
+                </div>
+                {embedTestResult.detail && (
+                  <div className="mt-2 space-y-0.5 text-cp-dim">
+                    <div>密钥: <span className="text-cp-text">{embedTestResult.detail.key_used}</span> <span className="text-cp-muted">（来源: {embedTestResult.detail.key_source === 'db' ? '数据库' : embedTestResult.detail.key_source === 'env' ? '环境变量' : '未配置'}）</span></div>
+                    <div>模型: <span className="text-cp-text">{embedTestResult.detail.model}</span></div>
+                    <div>地址: <span className="text-cp-text">{embedTestResult.detail.base_url}</span></div>
+                    <div>维度: <span className="text-cp-text">{embedTestResult.detail.dimensions}</span></div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
 
