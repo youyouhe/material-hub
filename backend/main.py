@@ -90,8 +90,6 @@ async def auth_middleware(request: Request, call_next):
     if request.url.path in exempt_paths:
         return await call_next(request)
 
-    logging.getLogger("materialhub.auth").warning("MW: path=%s method=%s", request.url.path, request.method)
-
     # Protect all /api/* paths except auth/login
     if request.url.path.startswith("/api/"):
         authorization = request.headers.get("authorization")
@@ -112,9 +110,8 @@ async def auth_middleware(request: Request, call_next):
             request.state.user_role = "admin"
             return await call_next(request)
 
-        logging.getLogger("materialhub.auth").warning("MW: before agent check, token=%s", token[:20] if token else "None")
+        # Check API agent tokens (mh-agent-*)
         if token and token.startswith("mh-agent-"):
-            logging.getLogger("materialhub.auth").warning("MW: ENTERED agent block, token=%s", token[:20])
             from dms_models import get_dms_session, ApiAgent
             from datetime import datetime
             agent_info = None
