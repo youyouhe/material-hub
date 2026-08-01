@@ -629,8 +629,10 @@ def _openai_embed(
         # BGE-M3 and other models — specify encoding format explicitly
         payload["encoding_format"] = "float"
 
+    logger.info(f"{provider_name} embedding request: url={url}, model={model}, payload_keys={list(payload.keys())}")
+    logger.debug(f"{provider_name} embedding payload: {payload}")
+
     max_retries = 3
-    retry_delays = [1, 2, 3]
 
     for attempt in range(max_retries):
         try:
@@ -671,7 +673,7 @@ def _openai_embed(
         except requests.exceptions.RequestException as e:
             resp_body = ""
             if hasattr(e, 'response') and e.response is not None:
-                try: resp_body = e.response.text[:300]
+                try: resp_body = e.response.text[:500]
                 except: pass
             raise Exception(f"{provider_name} embedding API error: {e}" + (f" | body: {resp_body}" if resp_body else ""))
 
