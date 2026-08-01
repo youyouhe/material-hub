@@ -434,12 +434,18 @@ def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, pe
 
     # Override entity-related fields if entity_name is provided
     if entity_name:
-        if doc_type_code in ("business-license", "company-profile"):
+        if "company_name" in template:
             data["company_name"] = entity_name
-        elif doc_type_code in ("contract", "bid-document", "acceptance-report"):
+        elif "party_b" in template:
             data["party_b"] = entity_name
-        elif doc_type_code in ("education-cert", "id-card", "professional-cert"):
-            pass  # keep random person data — use person_name instead
+        elif "bidder_name" in template:
+            data["bidder_name"] = entity_name
+        elif "seller" in template:
+            data["seller"] = entity_name
+        elif "manufacturer" in template:
+            data["manufacturer"] = entity_name
+        elif "authorizer" in template:
+            data["authorizer"] = entity_name
 
     # Override person name fields if person_name is provided
     if person_name:
@@ -773,6 +779,7 @@ def generate_mock(
     mock_reason: Optional[str] = None,
     requirement_context: Optional[dict] = None,
     idempotency_key: Optional[str] = None,
+    folder_path: Optional[str] = None,
 ) -> dict:
     """
     Generate a complete mock document: data + PNG + DB record.
@@ -830,22 +837,50 @@ def generate_mock(
                         "idempotent": True,
                     }
     # Entity consistency — reuse existing entity data for same entity_name
+    _existing_overrides = {}
     if entity_name:
-        from dms_models import Entity, DocumentEntity
+        from dms_models import Entity, DocumentEntity, DmsDocument
         with get_dms_session() as session:
             ent = session.query(Entity).filter(
                 Entity.name == entity_name
             ).first()
-            if ent and ent.attributes:
-                try: _existing_attrs = json.loads(ent.attributes)
-                except: _existing_attrs = {}
-                if _existing_attrs:
-                    _person_name_override = _existing_attrs.get("legal_person") or _existing_attrs.get("name")
-                    if _person_name_override and not person_name:
-                        person_name = _person_name_override
+            if ent:
+                if ent.attributes:
+                    try: _existing_attrs = json.loads(ent.attributes)
+                    except: _existing_attrs = {}
+                else:
+                    _existing_attrs = {}
+                # Reuse person name if available
+                _p = _existing_attrs.get("legal_person") or _existing_attrs.get("name")
+                if _p and not person_name:
+                    person_name = _p
+                # Reuse company-level fields from linked documents
+                _links = session.query(DocumentEntity).filter(
+                    DocumentEntity.entity_id == ent.id
+                ).all()
+                for link in _links:
+                    doc = session.query(DmsDocument).filter(
+                        DmsDocument.id == link.document_id
+                    ).first()
+                    if doc and doc.meta_json:
+                        try: meta = json.loads(doc.meta_json)
+                        except: continue
+                        ed = meta.get("extracted_data", {})
+                        for k in ("unified_social_credit_code", "credit_code",
+                                   "registered_capital", "address",
+                                   "establishment_date", "company_type",
+                                   "business_scope", "legal_person"):
+                            if k in ed and k not in _existing_overrides:
+                                _existing_overrides[k] = ed[k]
     # Generate mock data
-
     mock_data = generate_mock_data(doc_type_code, entity_name, person_name)
+
+    # Apply entity consistency overrides from existing documents
+    if _existing_overrides:
+        for k, v in _existing_overrides.items():
+            if k in mock_data and v:
+                mock_data[k] = v
+                logger.info("Entity consistency: using existing '%s' = '%s' for entity %s", k, v, entity_name)
 
     # Generate PNG image
     png_bytes = generate_mock_image(doc_type_name, doc_type_code, mock_data, entity_name, person_name)
@@ -864,10 +899,16 @@ def generate_mock(
     if create_record:
         try:
             with get_dms_session() as session:
-                # Find a matching folder: try by name, then by category path, then root
-                folder = session.query(Folder).filter(
-                    Folder.name == doc_type_name
-                ).first()
+                # Find a matching folder: try explicit path, then by name, then by category path, then root
+                folder = None
+                if folder_path:
+                    folder = session.query(Folder).filter(
+                        Folder.path == folder_path
+                    ).first()
+                if not folder:
+                    folder = session.query(Folder).filter(
+                        Folder.name == doc_type_name
+                    ).first()
                 if not folder:
                     folder = session.query(Folder).filter(
                         Folder.path.like(f"/{category}/%")

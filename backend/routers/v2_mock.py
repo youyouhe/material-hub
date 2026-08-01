@@ -65,6 +65,7 @@ async def generate_mock_on_demand(body: MockGenerateOnDemandRequest):
             mock_reason="generated_for_requirement",
             requirement_context=body.requirement_context,
             idempotency_key=idempotency_key,
+            folder_path=body.folder_path,
         )
     except Exception as e:
         logger.error(f"Mock on-demand generation failed: {e}", exc_info=True)
@@ -80,7 +81,6 @@ async def generate_mock_on_demand(body: MockGenerateOnDemandRequest):
         "requires_user_replacement": result.get("requires_user_replacement", True),
         "idempotent": result.get("idempotent", False),
     }
-
 
 @router.get("/types")
 async def list_types():
