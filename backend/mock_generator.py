@@ -870,9 +870,14 @@ def generate_mock(
                 document_id = doc.id
                 session.commit()
                 logger.info("Mock document record created: id=%d, title=%s", doc.id, doc.title)
+
+            # Auto-extract entities from mock data (outside inner session)
+            try:
+                from dms_processor import _link_entities
+                _link_entities(document_id, doc_type_code, mock_data)
+            except Exception as e:
+                logger.warning("Entity linking failed (non-fatal): %s", e)
         except Exception as e:
-            logger.warning("Failed to create mock document record: %s", e)
-            logger.warning("Traceback:", exc_info=True)
 
     # Build image URL
     image_url = f"/api/v2/files/mock/{img_filename}"
