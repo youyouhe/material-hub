@@ -110,6 +110,10 @@ async def auth_middleware(request: Request, call_next):
             request.state.user_role = "admin"
             return await call_next(request)
 
+        import logging as _logging
+        _log = _logging.getLogger("materialhub")
+        _log.warning(f"Pre-agent check: token={token[:15] if token else 'None'}... path={request.url.path}")
+
         # Check API agent tokens (mh-agent-*)
         if token and token.startswith("mh-agent-"):
             try:
