@@ -770,9 +770,17 @@ def generate_mock(
     entity_name: Optional[str] = None,
     person_name: Optional[str] = None,
     create_record: bool = True,
+    mock_reason: Optional[str] = None,
+    requirement_context: Optional[dict] = None,
+    idempotency_key: Optional[str] = None,
 ) -> dict:
     """
     Generate a complete mock document: data + PNG + DB record.
+
+    Args:
+        mock_reason: e.g. "generated_for_requirement" for on-demand mocks
+        requirement_context: tender project info stored in meta_json
+        idempotency_key: if set, return existing doc matching (entity, type, key)
 
     Returns:
         {
@@ -782,6 +790,7 @@ def generate_mock(
             "image_path": str,
             "document_id": int | None,
             "image_url": str,
+            "requires_user_replacement": bool,
         }
     """
     from dms_models import get_dms_session, DocType, DmsDocument, Folder
@@ -794,7 +803,48 @@ def generate_mock(
         doc_type_name = dt.name
         dt_id = dt.id
         category = dt.category or "general"
+    # Idempotency check — return existing if same (entity, type, key)
+    if idempotency_key and entity_name and create_record:
+        import json as _json
+        with get_dms_session() as session:
+            existing = session.query(DmsDocument).filter(
+                DmsDocument.status.in_(["active", "draft"]),
+            ).all()
+            for doc in existing:
+                try: meta = _json.loads(doc.meta_json or "{}")
+                except: continue
+                if (meta.get("mock")
+                    and meta.get("mock_reason") == "generated_for_requirement"
+                    and meta.get("document_type_code") == doc_type_code
+                    and meta.get("requirement_context", {}).get("tender_project") == idempotency_key):
+                    # Return existing document
+                    exp = doc.expiry_date.isoformat() if doc.expiry_date else None
+                    return {
+                        "doc_type_code": doc_type_code,
+                        "doc_type_name": doc_type_name,
+                        "mock_data": meta.get("extracted_data", {}),
+                        "image_path": "",
+                        "image_url": f"/api/v2/files/mock/{meta.get('img_filename', '')}",
+                        "document_id": doc.id,
+                        "requires_user_replacement": True,
+                        "idempotent": True,
+                    }
+    # Entity consistency — reuse existing entity data for same entity_name
+    if entity_name:
+        from dms_models import Entity, DocumentEntity
+        with get_dms_session() as session:
+            ent = session.query(Entity).filter(
+                Entity.name == entity_name
+            ).first()
+            if ent and ent.attributes:
+                try: _existing_attrs = json.loads(ent.attributes)
+                except: _existing_attrs = {}
+                if _existing_attrs:
+                    _person_name_override = _existing_attrs.get("legal_person") or _existing_attrs.get("name")
+                    if _person_name_override and not person_name:
+                        person_name = _person_name_override
     # Generate mock data
+
     mock_data = generate_mock_data(doc_type_code, entity_name, person_name)
 
     # Generate PNG image
@@ -825,17 +875,21 @@ def generate_mock(
                 if not folder:
                     folder = session.query(Folder).first()
 
+                title_suffix = "（MOCK-待替换）" if mock_reason == "generated_for_requirement" else "（模拟）"
                 doc = DmsDocument(
-                    title=f"{entity_name or company_name} - {doc_type_name}（模拟）",
+                    title=f"{entity_name or company_name} - {doc_type_name}{title_suffix}",
                     doc_type_id=dt_id,
                     folder_id=folder.id if folder else None,
                     status="active",
                     meta_json=json.dumps({
                         "mock": True,
+                        "mock_reason": mock_reason,
                         "document_type_code": doc_type_code,
                         "extracted_data": mock_data,
                         "entity_names": [entity_name] if entity_name else [],
                         "summary": _build_mock_summary(doc_type_code, mock_data),
+                        "requirement_context": requirement_context,
+                        "img_filename": img_filename,
                     }, ensure_ascii=False),
                 )
                 session.add(doc)
@@ -878,7 +932,8 @@ def generate_mock(
             except Exception as e:
                 logger.warning("Entity linking failed (non-fatal): %s", e)
         except Exception as e:
-
+            logger.warning("Failed to create mock document record: %s", e)
+            logger.warning("Traceback:", exc_info=True)
     # Build image URL
     image_url = f"/api/v2/files/mock/{img_filename}"
 
@@ -889,6 +944,7 @@ def generate_mock(
         "image_path": str(img_path),
         "image_url": image_url,
         "document_id": document_id,
+        "requires_user_replacement": mock_reason == "generated_for_requirement",
     }
 
 

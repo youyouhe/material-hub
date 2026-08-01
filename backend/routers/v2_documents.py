@@ -166,12 +166,11 @@ async def list_documents(
     entity_id: Optional[int] = Query(None),
     tag_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
+    mock_reason: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
-    """List documents with multiple filter options."""
     allowed_folders = get_accessible_folder_ids(request)
-
     with get_dms_session() as session:
         query = session.query(DmsDocument)
 
@@ -215,6 +214,9 @@ async def list_documents(
         if q:
             keyword = f"%{q}%"
             query = query.filter(DmsDocument.title.ilike(keyword))
+
+        if mock_reason:
+            query = query.filter(DmsDocument.meta_json.like(f'%"mock_reason": "{mock_reason}"%'))
 
         total = query.count()
         docs = query.order_by(DmsDocument.updated_at.desc()).offset(offset).limit(limit).all()

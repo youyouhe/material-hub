@@ -25,6 +25,62 @@ class MockGenerateRequest(BaseModel):
     person_name: Optional[str] = None
     create_record: bool = True
 
+class MockGenerateOnDemandRequest(BaseModel):
+    doc_type_code: str
+    entity_name: Optional[str] = None
+    requirement_context: Optional[dict] = None
+    folder_path: Optional[str] = None
+
+
+@router.post("/generate-on-demand", dependencies=[require_role("editor")])
+async def generate_mock_on_demand(body: MockGenerateOnDemandRequest):
+    """Generate mock document tailored to a specific tender requirement.
+
+    Key differences from /generate:
+    - Sets mock_reason="generated_for_requirement" for downstream tracking
+    - Stores requirement_context in meta_json for traceability
+    - Idempotent: same (entity, doc_type, tender_project) returns existing
+    - Title marked "（MOCK-待替换）"
+    """
+    from mock_generator import generate_mock, list_mock_types
+    from dms_models import get_dms_session, Folder
+
+    valid_types = list_mock_types()
+    if body.doc_type_code not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown doc_type_code: {body.doc_type_code}. Valid: {', '.join(valid_types)}",
+        )
+
+    # Determine idempotency key from tender project
+    idempotency_key = None
+    if body.requirement_context:
+        idempotency_key = body.requirement_context.get("tender_project")
+
+    try:
+        result = generate_mock(
+            body.doc_type_code,
+            entity_name=body.entity_name,
+            create_record=True,
+            mock_reason="generated_for_requirement",
+            requirement_context=body.requirement_context,
+            idempotency_key=idempotency_key,
+        )
+    except Exception as e:
+        logger.error(f"Mock on-demand generation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "success": True,
+        "doc_type_code": result["doc_type_code"],
+        "doc_type_name": result["doc_type_name"],
+        "mock_data": result["mock_data"],
+        "image_url": result.get("image_url", ""),
+        "document_id": result.get("document_id"),
+        "requires_user_replacement": result.get("requires_user_replacement", True),
+        "idempotent": result.get("idempotent", False),
+    }
+
 
 @router.get("/types")
 async def list_types():
