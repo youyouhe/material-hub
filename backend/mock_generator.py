@@ -840,44 +840,27 @@ def generate_mock(
     if entity_name:
         from dms_models import Entity, DocumentEntity, DmsDocument
         with get_dms_session() as session:
-            # Find ALL entities with this name — org first, then person
-            org_ent = session.query(Entity).filter(
-                Entity.name == entity_name, Entity.entity_type == "org"
-            ).first()
-            person_ent = session.query(Entity).filter(
-                Entity.name == entity_name, Entity.entity_type == "person"
-            ).first()
-            # Collect overrides from org entity + its linked documents
-            for ent in (org_ent, person_ent):
-                if not ent:
+            # Search ALL documents for this entity_name in extracted_data
+            # (entity extraction may not create org entities, so we bypass entity links)
+            all_docs = session.query(DmsDocument).filter(
+                DmsDocument.meta_json.like(f'%"company_name": "{entity_name}"%')
+            ).all()
+            for doc in all_docs:
+                try: meta = json.loads(doc.meta_json or "{}")
+                except: continue
+                ed = meta.get("extracted_data", {})
+                if ed.get("company_name") != entity_name:
                     continue
-                if ent.attributes:
-                    try: _existing_attrs = json.loads(ent.attributes)
-                    except: _existing_attrs = {}
-                else:
-                    _existing_attrs = {}
-                # Reuse person name if available
-                _p = _existing_attrs.get("legal_person") or _existing_attrs.get("name")
+                for k in ("unified_social_credit_code", "credit_code",
+                           "registered_capital", "address",
+                           "establishment_date", "company_type",
+                           "business_scope", "legal_person"):
+                    if k in ed and k not in _existing_overrides:
+                        _existing_overrides[k] = ed[k]
+                # Also get person name from linked person entities
+                _p = ed.get("legal_person")
                 if _p and not person_name:
                     person_name = _p
-                # Reuse company-level fields from linked documents
-                _links = session.query(DocumentEntity).filter(
-                    DocumentEntity.entity_id == ent.id
-                ).all()
-                for link in _links:
-                    doc = session.query(DmsDocument).filter(
-                        DmsDocument.id == link.document_id
-                    ).first()
-                    if doc and doc.meta_json:
-                        try: meta = json.loads(doc.meta_json)
-                        except: continue
-                        ed = meta.get("extracted_data", {})
-                        for k in ("unified_social_credit_code", "credit_code",
-                                   "registered_capital", "address",
-                                   "establishment_date", "company_type",
-                                   "business_scope", "legal_person"):
-                            if k in ed and k not in _existing_overrides:
-                                _existing_overrides[k] = ed[k]
     # Generate mock data
     mock_data = generate_mock_data(doc_type_code, entity_name, person_name)
 
