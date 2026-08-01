@@ -114,8 +114,9 @@ async def auth_middleware(request: Request, call_next):
         if token and token.startswith("mh-agent-"):
             try:
                 from dms_models import get_dms_session, ApiAgent
+                logger = logging.getLogger("materialhub")
+                logger.warning(f"Agent lookup: token_prefix=mh-agent, path={request.url.path}")
                 from datetime import datetime
-                agent_info = None
                 with get_dms_session() as dms_db:
                     agent = dms_db.query(ApiAgent).filter(
                         ApiAgent.token == token,
@@ -124,7 +125,7 @@ async def auth_middleware(request: Request, call_next):
                     if agent:
                         agent_info = (agent.id, agent.role)
                         agent.last_used_at = datetime.utcnow()
-                if agent_info:
+                logger.warning(f"Agent query result: found={agent_info is not None}, info={agent_info}")
                     request.state.user_id = None
                     request.state.user_role = agent_info[1]
                     request.state.agent_id = agent_info[0]
