@@ -62,6 +62,24 @@ MANAGED_SETTINGS = {
         "description": "LLM模型名称 (可选，留空使用默认)",
         "default": "",
     },
+    # Embedding settings
+    "embedding_base_url": {
+        "description": "Embedding API地址 (如 https://api.siliconflow.cn)",
+        "default": "",
+    },
+    "embedding_api_key": {
+        "description": "Embedding API密钥",
+        "default": "",
+        "sensitive": True,
+    },
+    "embedding_model": {
+        "description": "Embedding模型名称 (如 BAAI/bge-m3)",
+        "default": "BAAI/bge-m3",
+    },
+    "embedding_dimensions": {
+        "description": "Embedding向量维度 (如 4096)",
+        "default": "4096",
+    },
 }
 
 SENSITIVE_KEYS = {k for k, v in MANAGED_SETTINGS.items() if v.get("sensitive")}

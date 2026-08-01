@@ -832,22 +832,20 @@ def get_embedding_provider() -> LLMProvider:
       EMBEDDING_MODEL=BAAI/bge-m3
       EMBEDDING_DIMENSIONS=1024
     """
-    embedding_base = os.getenv("EMBEDDING_BASE_URL", "")
-    embedding_key = os.getenv("EMBEDDING_API_KEY", "")
-    embedding_model = os.getenv("EMBEDDING_MODEL", "")
+    # Priority: DB settings > env vars
+    try:
+        from dms_models import get_setting
+        embedding_base = get_setting("embedding_base_url") or os.getenv("EMBEDDING_BASE_URL", "")
+        embedding_key = get_setting("embedding_api_key") or os.getenv("EMBEDDING_API_KEY", "")
+        embedding_model = get_setting("embedding_model") or os.getenv("EMBEDDING_MODEL", "")
+        embedding_dims = get_setting("embedding_dimensions") or os.getenv("EMBEDDING_DIMENSIONS", "")
+    except Exception:
+        embedding_base = os.getenv("EMBEDDING_BASE_URL", "")
+        embedding_key = os.getenv("EMBEDDING_API_KEY", "")
+        embedding_model = os.getenv("EMBEDDING_MODEL", "")
+        embedding_dims = os.getenv("EMBEDDING_DIMENSIONS", "")
+
+    if embedding_dims:
+        os.environ["EMBEDDING_DIMENSIONS"] = embedding_dims
 
     if embedding_base and embedding_key:
-        # Use dedicated embedding endpoint
-        from urllib.parse import urlparse
-        domain = urlparse(embedding_base).netloc
-        logger.info("Using dedicated embedding endpoint: %s model=%s", domain, embedding_model or "default")
-
-        # Create a lightweight DeepSeekProvider pointed at the embedding endpoint
-        return DeepSeekProvider(
-            api_key=embedding_key,
-            base_url=embedding_base,
-            model=embedding_model or "BAAI/bge-m3",
-        )
-
-    # Fallback to main LLM provider (same endpoint for chat + embedding)
-    return get_llm_provider()

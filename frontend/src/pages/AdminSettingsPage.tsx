@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Save, TestTube2, Eye, EyeOff, Brain, Server } from 'lucide-react';
+import { Settings, Save, TestTube2, Eye, EyeOff, Brain, Server, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getSettings, batchUpdateSettings, testOcr, testLlm } from '../services/api-v2';
@@ -44,6 +44,7 @@ export default function AdminSettingsPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [showApiKey, setShowApiKey] = useState(false);
   const [showLlmKey, setShowLlmKey] = useState(false);
+  const [showEmbedKey, setShowEmbedKey] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   const fetchSettings = useCallback(async () => {
@@ -261,6 +262,89 @@ export default function AdminSettingsPage() {
               </div>
             )}
           </div>
+
+          {/* Embedding Section */}
+          <div className="cp-card rounded-lg p-5">
+            <h3 className="text-sm font-orbitron font-semibold text-cp-cyan mb-4 flex items-center gap-2">
+              <Zap className="w-4 h-4" /> Embedding 向量化服务
+            </h3>
+            <p className="text-xs text-cp-dim mb-4">用于知识库向量搜索。推荐使用 SiliconFlow (BGE-M3)，中文效果最优，有免费额度。</p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-cp-muted mb-1">API 地址</label>
+                <input
+                  value={form.embedding_base_url || ''}
+                  onChange={(e) => handleChange('embedding_base_url', e.target.value)}
+                  placeholder="https://api.siliconflow.cn"
+                  className="cp-input w-full rounded-md px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-cp-dim mt-1">留空则复用 LLM 提供者（DeepSeek 不支持 embedding）</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-cp-muted mb-1">API 密钥</label>
+                <div className="relative">
+                  <input
+                    type={showEmbedKey ? 'text' : 'password'}
+                    value={form.embedding_api_key || ''}
+                    onChange={(e) => handleChange('embedding_api_key', e.target.value)}
+                    placeholder={settings?.embedding_api_key?.value ? '已设置 (留空保持不变)' : '输入API密钥'}
+                    className="cp-input w-full rounded-md px-3 py-2 text-sm pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEmbedKey(!showEmbedKey)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-cp-dim hover:text-cp-text"
+                  >
+                    {showEmbedKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-xs text-cp-dim mt-1">
+                  {settings?.embedding_api_key?.value && settings.embedding_api_key.value !== '****'
+                    ? <span className="text-green-500">● 已配置密钥</span>
+                    : <span className="text-cp-rose">○ 未配置密钥（将回退到本地确定性向量）</span>}
+                  <span className="mx-2">|</span>
+                  在 cloud.siliconflow.cn 获取
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-cp-muted mb-1">模型名称</label>
+                  <input
+                    value={form.embedding_model || ''}
+                    onChange={(e) => handleChange('embedding_model', e.target.value)}
+                    placeholder="BAAI/bge-m3"
+                    className="cp-input w-full rounded-md px-3 py-2 text-sm"
+                  />
+                  <p className="text-xs text-cp-dim mt-1">推荐: BAAI/bge-m3（中文最优）</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-cp-muted mb-1">向量维度</label>
+                  <input
+                    value={form.embedding_dimensions || ''}
+                    onChange={(e) => handleChange('embedding_dimensions', e.target.value)}
+                    placeholder="4096"
+                    className="cp-input w-full rounded-md px-3 py-2 text-sm"
+                  />
+                  <p className="text-xs text-cp-dim mt-1">BGE-M3: 4096, text-embedding-3-small: 1536</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 mt-6 pt-4 border-t border-cp-border/50">
+              <button
+                onClick={handleSave}
+                disabled={saving || !dirty}
+                className="cp-btn-primary flex items-center gap-1 px-4 py-2 text-sm rounded-lg disabled:opacity-40"
+              >
+                <Save className="w-4 h-4" />
+                {saving ? '保存中...' : '保存设置'}
+              </button>
+            </div>
+          </div>
+
 
           {/* OCR Provider Section */}
           <div className="cp-card rounded-lg p-5">
