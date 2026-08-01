@@ -849,3 +849,16 @@ def get_embedding_provider() -> LLMProvider:
         os.environ["EMBEDDING_DIMENSIONS"] = embedding_dims
 
     if embedding_base and embedding_key:
+        # Use dedicated embedding endpoint
+        from urllib.parse import urlparse
+        domain = urlparse(embedding_base).netloc
+        logger.info("Using dedicated embedding endpoint: %s model=%s", domain, embedding_model or "default")
+
+        return DeepSeekProvider(
+            api_key=embedding_key,
+            base_url=embedding_base,
+            model=embedding_model or "BAAI/bge-m3",
+        )
+
+    # Fallback to main LLM provider (same endpoint for chat + embedding)
+    return get_llm_provider()
