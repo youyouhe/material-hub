@@ -625,6 +625,9 @@ def _openai_embed(
     _model_lower = (model or "").lower()
     if "qwen" in _model_lower or "embedding-3" in _model_lower:
         payload["dimensions"] = int(os.getenv("EMBEDDING_DIMENSIONS", "1024"))
+    else:
+        # BGE-M3 and other models — specify encoding format explicitly
+        payload["encoding_format"] = "float"
 
     max_retries = 3
     retry_delays = [1, 2, 3]
@@ -666,7 +669,11 @@ def _openai_embed(
                 continue
             raise Exception(f"{provider_name} embedding API connection error: {e}")
         except requests.exceptions.RequestException as e:
-            raise Exception(f"{provider_name} embedding API error: {e}")
+            resp_body = ""
+            if hasattr(e, 'response') and e.response is not None:
+                try: resp_body = e.response.text[:300]
+                except: pass
+            raise Exception(f"{provider_name} embedding API error: {e}" + (f" | body: {resp_body}" if resp_body else ""))
 
 
 def _deterministic_embedding(text: str, dimensions: int = 1024) -> List[float]:
