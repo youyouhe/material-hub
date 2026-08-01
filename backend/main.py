@@ -98,9 +98,10 @@ async def auth_middleware(request: Request, call_next):
         token = None
         if authorization and authorization.startswith("Bearer "):
             token = authorization.replace("Bearer ", "")
+            import logging
+            _l = logging.getLogger("materialhub.auth.middleware")
+            _l.warning(f"Bearer token: prefix={token[:12]}..., path={request.url.path}")
         else:
-            # Try to get token from query params
-            query_params = dict(request.query_params)
             token = query_params.get("token")
 
         # Support static API key for MCP / external integrations (legacy)
