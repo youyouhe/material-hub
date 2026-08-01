@@ -793,6 +793,7 @@ def generate_mock(
             raise ValueError(f"Unknown doc type: {doc_type_code}")
         doc_type_name = dt.name
         dt_id = dt.id
+        category = dt.category or "general"
     # Generate mock data
     mock_data = generate_mock_data(doc_type_code, entity_name, person_name)
 
