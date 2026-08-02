@@ -246,6 +246,19 @@ MOCK_TEMPLATES: Dict[str, dict] = {
         "level": lambda: random.choice(["国家级", "省部级", "市级", "行业级"]),
         "cert_number": lambda: _random_cert_number("AW"),
     },
+    "audit-report": {
+        "report_type": lambda: random.choice(["财务审计报告", "验资报告", "年度审计报告", "专项审计报告"]),
+        "company_name": lambda: _random_company_name(),
+        "period": lambda: f"{random.choice([2023, 2024, 2025])}年度",
+        "issuer": lambda: random.choice(["普华永道中天会计师事务所", "德勤华永会计师事务所", "安永华明会计师事务所",
+                                         "毕马威华振会计师事务所", "立信会计师事务所", "天健会计师事务所"]),
+        "report_number": lambda: f"审字[{random.choice([2023,2024,2025])}]第{random.randint(1000,9999)}号",
+        "audit_opinion": lambda: random.choice(["标准无保留意见", "无保留意见"]),
+        "total_assets": lambda: _random_amount(),
+        "net_profit": lambda: _random_amount(),
+        "issue_date": lambda: _random_date(365, 0),
+        "certified_public_accountant": lambda: _random_person_name() + "、" + _random_person_name(),
+    },
     "id-card": {
         "name": lambda: _random_person_name(),
         "gender": lambda: _random_id_number()[1],
@@ -420,6 +433,57 @@ MOCK_TEMPLATES: Dict[str, dict] = {
 }
 
 
+# ── requirement_text-driven content overrides ──────────────────────────
+# Deterministic keyword matching: if requirement_text contains a known cert
+# name / project domain keyword, use it verbatim instead of the random pool.
+# This lets qualification-cert/contract content track what the tender
+# actually asked for, instead of always drawing the same random sample.
+
+_QUALIFICATION_CERT_KEYWORDS = [
+    "纳税信用A级证书", "纳税信用A级", "CQC节能认证", "CEC环境标志认证", "环境标志认证",
+    "发明专利", "实用新型专利", "标准制定证明", "参编标准证明",
+    "计算机信息系统集成一级", "计算机信息系统集成二级",
+    "电子与智能化工程专业承包一级", "建筑智能化系统设计专项甲级",
+    "CMMI 5级", "CMMI 3级", "国家高新技术企业", "高新技术企业",
+    "安全生产许可证", "守合同重信用企业",
+]
+
+_CONTRACT_PROJECT_KEYWORDS = [
+    "教学管理系统", "智慧教育", "智慧医疗", "智慧交通", "智慧园区", "智慧城市",
+    "数字政务", "工业互联网", "数据中心", "网络安全", "云平台", "大数据平台",
+    "物联网", "人工智能", "电子政务", "OA系统", "ERP系统", "财务管理系统",
+    "人事管理系统", "档案管理系统", "客户关系管理系统", "供应链管理系统",
+]
+
+
+def _extract_requirement_overrides(doc_type_code: str, requirement_text: Optional[str]) -> dict:
+    """Best-effort deterministic extraction of content hints from requirement_text.
+
+    Returns a dict of field overrides to apply on top of the random template.
+    Falls back to no overrides (keep random content) when nothing matches —
+    this is a heuristic, not a guarantee, so an empty dict is a valid outcome.
+    """
+    if not requirement_text:
+        return {}
+
+    overrides = {}
+
+    if doc_type_code == "qualification-cert":
+        for kw in _QUALIFICATION_CERT_KEYWORDS:
+            if kw in requirement_text:
+                overrides["cert_name"] = kw
+                break
+
+    if doc_type_code == "contract":
+        for kw in _CONTRACT_PROJECT_KEYWORDS:
+            if kw in requirement_text:
+                overrides["project_name"] = kw + random.choice(["销售合同", "服务合同", "建设合同", "采购合同"])
+                overrides["project_description"] = f"本合同标的为{kw}项目的建设与实施，实现数据共享、业务协同和智能决策。"
+                break
+
+    return overrides
+
+
 # ── Mock data generation ──────────────────────────────────────────────
 
 def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, person_name: Optional[str] = None) -> dict:
@@ -434,7 +498,10 @@ def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, pe
 
     # Override entity-related fields if entity_name is provided
     if entity_name:
-        if "company_name" in template:
+        if doc_type_code in ("id-card", "education-cert", "professional-cert"):
+            # Personnel doc types: entity_name IS the person's name
+            data["name"] = entity_name
+        elif "company_name" in template:
             data["company_name"] = entity_name
         elif "party_b" in template:
             data["party_b"] = entity_name
@@ -472,6 +539,7 @@ def _build_mock_summary(doc_type_code: str, mock_data: dict) -> str:
         "iso-cert": ["cert_name", "cert_number", "company_name", "standard",
                      "issuing_authority", "scope"],
         "honor-award": ["award_name", "company_name", "level", "issuing_authority"],
+        "audit-report": ["report_type", "company_name", "period", "issuer", "audit_opinion"],
         "id-card": ["name", "id_number", "gender", "address"],
         "education-cert": ["name", "school_name", "major", "degree", "cert_name"],
         "professional-cert": ["name", "cert_name", "cert_number", "cert_level",
@@ -620,6 +688,14 @@ def generate_mock_image(
         "award_date": "获奖日期",
         "award_category": "奖项类别",
         "level": "奖项级别",
+        "report_type": "报告类型",
+        "period": "报告期间",
+        "issuer": "出具机构",
+        "report_number": "报告文号",
+        "audit_opinion": "审计意见",
+        "total_assets": "资产总额",
+        "net_profit": "净利润",
+        "certified_public_accountant": "签字注册会计师",
         "name": "姓名",
         "id_number": "证件号码",
         "gender": "性别",
@@ -810,7 +886,10 @@ def generate_mock(
         doc_type_name = dt.name
         dt_id = dt.id
         category = dt.category or "general"
-    # Idempotency check — return existing if same (entity, type, key)
+    # Idempotency check — return existing if same (entity, type, key, requirement_text).
+    # entity_name and requirement_text must also match: otherwise two different people/certs
+    # requested under the same tender_project would incorrectly collapse into one document.
+    requirement_text = (requirement_context or {}).get("requirement_text")
     if idempotency_key and entity_name and create_record:
         import json as _json
         with get_dms_session() as session:
@@ -820,10 +899,13 @@ def generate_mock(
             for doc in existing:
                 try: meta = _json.loads(doc.meta_json or "{}")
                 except: continue
+                existing_ctx = meta.get("requirement_context") or {}
                 if (meta.get("mock")
                     and meta.get("mock_reason") == "generated_for_requirement"
                     and meta.get("document_type_code") == doc_type_code
-                    and meta.get("requirement_context", {}).get("tender_project") == idempotency_key):
+                    and entity_name in meta.get("entity_names", [])
+                    and existing_ctx.get("tender_project") == idempotency_key
+                    and existing_ctx.get("requirement_text") == requirement_text):
                     # Return existing document
                     exp = doc.expiry_date.isoformat() if doc.expiry_date else None
                     return {
@@ -863,6 +945,10 @@ def generate_mock(
                     person_name = _p
     # Generate mock data
     mock_data = generate_mock_data(doc_type_code, entity_name, person_name)
+
+    # Apply requirement_text-driven content overrides (e.g. cert_name/project_name
+    # matching what the tender actually asked for, instead of a random draw)
+    mock_data.update(_extract_requirement_overrides(doc_type_code, requirement_text))
 
     # Apply entity consistency overrides from existing documents
     # Map canonical field names to template-specific aliases

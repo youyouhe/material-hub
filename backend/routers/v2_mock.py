@@ -28,6 +28,7 @@ class MockGenerateRequest(BaseModel):
 class MockGenerateOnDemandRequest(BaseModel):
     doc_type_code: str
     entity_name: Optional[str] = None
+    person_name: Optional[str] = None
     requirement_context: Optional[dict] = None
     folder_path: Optional[str] = None
 
@@ -61,6 +62,7 @@ async def generate_mock_on_demand(body: MockGenerateOnDemandRequest):
         result = generate_mock(
             body.doc_type_code,
             entity_name=body.entity_name,
+            person_name=body.person_name,
             create_record=True,
             mock_reason="generated_for_requirement",
             requirement_context=body.requirement_context,
