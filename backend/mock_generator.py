@@ -484,6 +484,106 @@ def _extract_requirement_overrides(doc_type_code: str, requirement_text: Optiona
     return overrides
 
 
+# ── LLM-driven content generation ───────────────────────────────────────
+# Keyword matching (_extract_requirement_overrides above) is a brittle fallback:
+# every new cert name / project domain needs a new hardcoded entry, and fields
+# generated independently (e.g. invoice amount vs amount_total) never get
+# cross-checked against each other. For doc types where this has repeatedly
+# caused problems, try an LLM call first — it can do semantic matching against
+# free-form requirement_text and keep multiple fields internally consistent in
+# a single generation. Falls back to the deterministic/random path on any
+# failure (timeout, bad JSON, missing provider config) so the endpoint never
+# becomes unavailable because of the LLM.
+
+# Fields the LLM is asked to fill per doc type, with a short field-purpose hint
+# so the model knows what each key means without us hand-writing a full schema.
+_LLM_CONTENT_FIELDS = {
+    "qualification-cert": {
+        "cert_name": "证书/资质名称，必须精确匹配招标要求原文里提到的证书名称",
+        "cert_level": "资质等级（如：一级/二级/甲级/A级，若原文未提及等级则给出该证书常见的等级）",
+        "issuing_authority": "该证书的真实发证机关名称（必须与证书类型匹配，如CQC认证的发证机关是中国质量认证中心）",
+        "scope": "认证覆盖范围，简要描述",
+    },
+    "authorization": {
+        "authorization_type": "授权文件类型（如：法定代表人授权委托书、投标授权书）",
+        "scope": "授权范围，必须明确提到本次招标项目所属的具体业务领域/项目名称，不能是无关领域的套话",
+        "authorized_person_position": "被授权人职务",
+    },
+    "invoice": {
+        "items": "发票货物或服务名称，应与招标项目业务领域相关",
+        "invoice_type": "发票类型",
+    },
+    "contract": {
+        "project_name": "合同标的项目名称，必须体现招标要求原文中的具体业务领域",
+        "project_description": "项目描述，简要说明建设内容，须与 project_name 一致",
+        "contract_name": "合同名称类型（如：软件开发合同、销售合同）",
+    },
+}
+
+_LLM_CONTENT_DOC_TYPES = frozenset(_LLM_CONTENT_FIELDS.keys())
+
+
+def _llm_generate_content(
+    doc_type_code: str,
+    requirement_text: Optional[str],
+    entity_known_attributes: dict,
+) -> dict:
+    """Ask the LLM to fill in the semantic content fields for one doc type.
+
+    Returns {} on any failure — callers must treat this as a best-effort
+    enhancement layer on top of the existing random/keyword generation,
+    never as the sole source of a field.
+    """
+    fields = _LLM_CONTENT_FIELDS.get(doc_type_code)
+    if not fields or not requirement_text:
+        return {}
+
+    try:
+        from llm_provider import get_llm_provider
+        llm = get_llm_provider()
+    except Exception as e:
+        logger.info("LLM content generation skipped (provider unavailable): %s", e)
+        return {}
+
+    field_lines = "\n".join(f'  - "{k}": {desc}' for k, desc in fields.items())
+    known_lines = "\n".join(f"  - {k}: {v}" for k, v in entity_known_attributes.items() if v) or "  （无）"
+
+    prompt = f"""你在为一份招标投标场景生成模拟测试文档的内容字段，仅用于系统测试演示。
+
+文档类型：{doc_type_code}
+招标要求原文：{requirement_text}
+
+已知的实体真实属性（生成内容时必须与这些保持一致，不能编造矛盾信息）：
+{known_lines}
+
+请为以下字段生成合适的中文内容，要求：
+1. 内容必须准确匹配"招标要求原文"里提到的具体名称/领域/术语，不能用无关的通用内容替代
+2. 字段之间的信息必须互相一致（如果多个字段都涉及同一个项目/证书，必须是同一个）
+3. 只返回 JSON，不要任何解释文字，不要用 markdown 代码块包裹
+
+需要生成的字段：
+{field_lines}
+
+严格按此 JSON 格式返回：{{{", ".join(f'"{k}": "..."' for k in fields)}}}"""
+
+    try:
+        response = llm.chat([{"role": "user", "content": prompt}], temperature=0.3, max_tokens=800)
+        json_text = response.strip()
+        if "```json" in json_text:
+            json_text = json_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in json_text:
+            json_text = json_text.split("```")[1].split("```")[0].strip()
+        result = json.loads(json_text)
+        # Only accept the fields we asked for — never let the LLM inject arbitrary keys
+        overrides = {k: v for k, v in result.items() if k in fields and v}
+        if overrides:
+            logger.info("LLM content generation for %s: %s", doc_type_code, list(overrides.keys()))
+        return overrides
+    except Exception as e:
+        logger.warning("LLM content generation failed for %s, falling back: %s", doc_type_code, e)
+        return {}
+
+
 # ── Mock data generation ──────────────────────────────────────────────
 
 def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, person_name: Optional[str] = None) -> dict:
@@ -525,7 +625,31 @@ def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, pe
         elif doc_type_code == "authorization":
             data["authorized_party"] = person_name
 
+    # invoice: amount/amount_tax/amount_total are computed together so the
+    # arithmetic always holds (previously each was an independent random draw,
+    # so amount + amount_tax could land anywhere relative to amount_total).
+    if doc_type_code == "invoice":
+        data.update(_compute_invoice_amounts())
+
     return data
+
+
+def _compute_invoice_amounts(tax_rate: float = 0.13) -> dict:
+    """Compute a consistent (amount, amount_tax, amount_total) triple.
+
+    amount_total = amount + amount_tax, always — this is the exact
+    relationship the GAPS_ROUND2 report flagged as broken.
+    """
+    base_amounts = [50000, 80000, 100000, 150000, 200000, 280000, 350000,
+                     500000, 680000, 800000, 1000000]
+    amount = random.choice(base_amounts) + random.randint(0, 9999) / 100
+    amount_tax = round(amount * tax_rate, 2)
+    amount_total = round(amount + amount_tax, 2)
+    return {
+        "amount": f"¥{amount:,.2f}",
+        "amount_tax": f"¥{amount_tax:,.2f}",
+        "amount_total": f"¥{amount_total:,.2f}",
+    }
 
 
 def _build_mock_summary(doc_type_code: str, mock_data: dict) -> str:
@@ -946,9 +1070,22 @@ def generate_mock(
     # Generate mock data
     mock_data = generate_mock_data(doc_type_code, entity_name, person_name)
 
-    # Apply requirement_text-driven content overrides (e.g. cert_name/project_name
-    # matching what the tender actually asked for, instead of a random draw)
-    mock_data.update(_extract_requirement_overrides(doc_type_code, requirement_text))
+    # Semantic content generation: try LLM first (understands free-form
+    # requirement_text, keeps related fields internally consistent), then
+    # fill any remaining gaps with the deterministic keyword matcher.
+    entity_known_attributes = dict(_existing_overrides)
+    if entity_name:
+        entity_known_attributes.setdefault("company_name", entity_name)
+    if person_name:
+        entity_known_attributes.setdefault("legal_person", person_name)
+
+    llm_overrides = {}
+    if doc_type_code in _LLM_CONTENT_DOC_TYPES:
+        llm_overrides = _llm_generate_content(doc_type_code, requirement_text, entity_known_attributes)
+    mock_data.update(llm_overrides)
+
+    keyword_overrides = _extract_requirement_overrides(doc_type_code, requirement_text)
+    mock_data.update({k: v for k, v in keyword_overrides.items() if k not in llm_overrides})
 
     # Apply entity consistency overrides from existing documents
     # Map canonical field names to template-specific aliases
