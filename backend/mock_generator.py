@@ -604,6 +604,11 @@ def _llm_generate_content(
 
 # ── Mock data generation ──────────────────────────────────────────────
 
+# Doc types whose entity_name refers to a person, not an organization —
+# used for entity_type resolution (person vs org) and baseline skipping.
+_PERSONNEL_DOC_TYPES = ("id-card", "education-cert", "professional-cert")
+
+
 def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, person_name: Optional[str] = None) -> dict:
     """Generate mock metadata for a given document type code."""
     template = MOCK_TEMPLATES.get(doc_type_code)
@@ -616,7 +621,7 @@ def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, pe
 
     # Override entity-related fields if entity_name is provided
     if entity_name:
-        if doc_type_code in ("id-card", "education-cert", "professional-cert"):
+        if doc_type_code in _PERSONNEL_DOC_TYPES:
             # Personnel doc types: entity_name IS the person's name
             data["name"] = entity_name
         elif "company_name" in template:
@@ -638,7 +643,7 @@ def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, pe
             data["legal_person"] = person_name
         elif doc_type_code == "company-profile":
             data["legal_person"] = person_name
-        elif doc_type_code in ("id-card", "education-cert", "professional-cert"):
+        elif doc_type_code in _PERSONNEL_DOC_TYPES:
             data["name"] = person_name
         elif doc_type_code == "authorization":
             data["authorized_party"] = person_name
@@ -1066,15 +1071,22 @@ _ENTITY_BASELINE_KEYS = (
 )
 
 
-def _persist_entity_baseline(entity_name: str, mock_data: dict) -> None:
+def _persist_entity_baseline(entity_name: str, mock_data: dict, doc_type_code: str) -> None:
     """Write this call's finalized baseline fields into dms_entities.attributes.
 
     Best-effort: creates the org Entity if it doesn't exist yet, merges new
     keys into existing attributes (never overwrites a key that's already set,
     so the first generation's values win and stay stable across all later
     calls — including ones made after mock documents were cleaned up).
+
+    Skipped for personnel doc types: there entity_name is a person's name and
+    the baseline holds company attributes, so persisting would wrongly register
+    the person as an org entity.
     """
     from dms_models import get_dms_session, Entity
+
+    if doc_type_code in _PERSONNEL_DOC_TYPES:
+        return
 
     new_attrs = {k: mock_data[k] for k in _ENTITY_BASELINE_KEYS if mock_data.get(k)}
     if not new_attrs:
@@ -1105,6 +1117,28 @@ def _persist_entity_baseline(entity_name: str, mock_data: dict) -> None:
                 session.add(entity)
     except Exception as e:
         logger.warning("Failed to persist entity baseline for %s: %s", entity_name, e)
+
+
+def _resolve_primary_entity(session, doc_type_code: str, entity_name: str):
+    """Find-or-create the primary Entity for a mock document.
+
+    Personnel doc types (id-card etc.) resolve to entity_type="person";
+    everything else resolves to "org". This is the entity SmartBid queries by
+    (meta.entity_names), so it must be linked to the document explicitly —
+    dms_processor._link_entities skips the primary name fields by design.
+    """
+    from dms_models import Entity
+
+    entity_type = "person" if doc_type_code in _PERSONNEL_DOC_TYPES else "org"
+    entity = session.query(Entity).filter(
+        Entity.entity_type == entity_type, Entity.name == entity_name,
+    ).first()
+    if not entity:
+        entity = Entity(entity_type=entity_type, name=entity_name)
+        session.add(entity)
+        session.flush()
+        logger.info("Created primary entity: %s '%s' (id=%d)", entity_type, entity_name, entity.id)
+    return entity
 
 
 # ── Main entry point ──────────────────────────────────────────────────
@@ -1184,7 +1218,7 @@ def generate_mock(
                         "idempotent": True,
                     }
     _existing_overrides = {}
-    if entity_name:
+    if entity_name and doc_type_code not in _PERSONNEL_DOC_TYPES:
         from dms_models import Entity
         with get_dms_session() as session:
             # Persistent baseline: dms_entities.attributes survives independently of
@@ -1252,7 +1286,7 @@ def generate_mock(
     # dms_entities, so subsequent calls for this entity_name stay consistent
     # even after this document — or all mock documents — get cleaned up.
     if entity_name:
-        _persist_entity_baseline(entity_name, mock_data)
+        _persist_entity_baseline(entity_name, mock_data, doc_type_code)
 
     # Generate PNG image
     png_bytes = generate_mock_image(doc_type_name, doc_type_code, mock_data, entity_name, person_name)
@@ -1333,6 +1367,21 @@ def generate_mock(
                 )
                 session.add(dms_file)
                 session.flush()
+
+                # Link the primary entity (the one recorded in
+                # meta.entity_names and queried by SmartBid via
+                # search?entity_id=). _link_entities below only covers
+                # secondary fields — it skips primary name fields by design,
+                # so without this the entity↔document association is never
+                # created and per-entity search returns 0.
+                if entity_name:
+                    from dms_models import DocumentEntity
+                    primary_entity = _resolve_primary_entity(session, doc_type_code, entity_name)
+                    session.add(DocumentEntity(
+                        document_id=doc.id,
+                        entity_id=primary_entity.id,
+                        role="owner",
+                    ))
 
                 document_id = doc.id
                 session.commit()
