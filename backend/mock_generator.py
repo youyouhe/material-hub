@@ -1178,7 +1178,7 @@ def generate_mock(
                         "doc_type_name": doc_type_name,
                         "mock_data": meta.get("extracted_data", {}),
                         "image_path": "",
-                        "image_url": f"/api/v2/files/mock/{meta.get('img_filename', '')}",
+                        "image_url": f"/api/v2/mock/files/{meta.get('img_filename', '')}",
                         "document_id": doc.id,
                         "requires_user_replacement": True,
                         "idempotent": True,
@@ -1348,7 +1348,7 @@ def generate_mock(
             logger.warning("Failed to create mock document record: %s", e)
             logger.warning("Traceback:", exc_info=True)
     # Build image URL
-    image_url = f"/api/v2/files/mock/{img_filename}"
+    image_url = f"/api/v2/mock/files/{img_filename}"
 
     return {
         "doc_type_code": doc_type_code,
