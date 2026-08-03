@@ -23,6 +23,24 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 MOCK_DIR = DATA_DIR / "dms_files" / "mock"
 MOCK_DIR.mkdir(parents=True, exist_ok=True)
 
+_TRUE_VALUES = ("true", "1", "yes", "on")
+
+
+def is_mock_enabled() -> bool:
+    """Check whether mock document generation is enabled.
+
+    DB setting (dms_system_settings.mock_enabled) takes precedence;
+    falls back to MOCK_ENABLED env var; defaults to disabled.
+    """
+    try:
+        from dms_models import get_setting
+        val = get_setting("mock_enabled")
+        if val is not None:
+            return val.strip().lower() in _TRUE_VALUES
+    except Exception:
+        pass
+    return os.getenv("MOCK_ENABLED", "false").strip().lower() in _TRUE_VALUES
+
 # ── Chinese resource pools ────────────────────────────────────────────
 
 _SURNAMES = ["王", "李", "张", "刘", "陈", "杨", "赵", "黄", "周", "吴",
@@ -1122,6 +1140,9 @@ def generate_mock(
     """
     from dms_models import get_dms_session, DocType, DmsDocument, Folder
     from dms_models import DmsFile, Revision
+
+    if not is_mock_enabled():
+        raise RuntimeError("Mock 功能未启用（系统设置 mock_enabled=false）")
 
     with get_dms_session() as session:
         dt = session.query(DocType).filter(DocType.code == doc_type_code).first()

@@ -274,6 +274,19 @@ def search_index(query: str, limit: int = 50, offset: int = 0):
 
         all_ids = fts_doc_ids + like_ids
 
+        # Hide mock documents from search results when mock feature is disabled
+        from mock_generator import is_mock_enabled
+        if all_ids and not is_mock_enabled():
+            mock_rows = session.query(DmsDocument.id).filter(
+                DmsDocument.id.in_(all_ids),
+                DmsDocument.meta_json.like('%"mock": true%'),
+            ).all()
+            mock_ids = {r[0] for r in mock_rows}
+            if mock_ids:
+                all_ids = [did for did in all_ids if did not in mock_ids]
+                for did in mock_ids:
+                    details.pop(did, None)
+
         # Total count: FTS count + LIKE-only count
         total = 0
         try:

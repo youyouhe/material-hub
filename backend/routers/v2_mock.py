@@ -19,6 +19,13 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 MOCK_DIR = DATA_DIR / "dms_files" / "mock"
 
 
+def _require_mock_enabled():
+    """Raise 403 when mock generation is disabled via system settings."""
+    from mock_generator import is_mock_enabled
+    if not is_mock_enabled():
+        raise HTTPException(status_code=403, detail="Mock 功能未启用（系统设置 mock_enabled=false）")
+
+
 class MockGenerateRequest(BaseModel):
     doc_type_code: str
     entity_name: Optional[str] = None
@@ -43,6 +50,7 @@ async def generate_mock_on_demand(body: MockGenerateOnDemandRequest):
     - Idempotent: same (entity, doc_type, tender_project) returns existing
     - Title marked "（MOCK-待替换）"
     """
+    _require_mock_enabled()
     from mock_generator import generate_mock, list_mock_types
     from dms_models import get_dms_session, Folder
 
@@ -87,6 +95,7 @@ async def generate_mock_on_demand(body: MockGenerateOnDemandRequest):
 @router.get("/types")
 async def list_types():
     """List all available mock document type codes."""
+    _require_mock_enabled()
     from mock_generator import list_mock_types
     from dms_models import get_dms_session, DocType
 
@@ -105,6 +114,7 @@ async def list_types():
 @router.post("/generate", dependencies=[require_role("editor")])
 async def generate_mock(body: MockGenerateRequest):
     """Generate a mock document with data and PNG image."""
+    _require_mock_enabled()
     from mock_generator import generate_mock, list_mock_types
 
     valid_types = list_mock_types()
@@ -138,6 +148,9 @@ async def generate_mock(body: MockGenerateRequest):
 @router.get("/files/{filename}")
 async def serve_mock_image(filename: str):
     """Serve a generated mock PNG image."""
+    from mock_generator import is_mock_enabled
+    if not is_mock_enabled():
+        raise HTTPException(status_code=404, detail="Not found")
     filepath = MOCK_DIR / filename
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Mock image not found")

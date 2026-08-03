@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from dms_models import get_dms_session, DmsDocument, Folder, DocType, ChatHistory
 from dms_auth import get_current_user_id
 from llm_provider import get_llm_provider
-from chat_tools import TOOL_DEFINITIONS, execute_tool
+from chat_tools import get_tool_definitions, execute_tool
 
 logger = logging.getLogger("materialhub.routers.v2_chat")
 
@@ -151,7 +151,7 @@ def run_agent_loop(user_messages: list[dict], folder_id: int | None,
 
         try:
             response = provider.chat_with_tools(
-                llm_messages, TOOL_DEFINITIONS,
+                llm_messages, get_tool_definitions(),
                 temperature=0.3, max_tokens=4000
             )
         except NotImplementedError:

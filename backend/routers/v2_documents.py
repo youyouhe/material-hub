@@ -169,12 +169,21 @@ async def list_documents(
     mock_reason: Optional[str] = Query(None),
     entity_name: Optional[str] = Query(None, description="Filter mock docs by meta_json.entity_names"),
     tender_project: Optional[str] = Query(None, description="Filter mock docs by meta_json.requirement_context.tender_project"),
+    include_mock: bool = Query(False, description="mock关闭时仍显式包含mock文档"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
+    from mock_generator import is_mock_enabled
     allowed_folders = get_accessible_folder_ids(request)
     with get_dms_session() as session:
         query = session.query(DmsDocument)
+
+        # Hide mock documents when mock feature is disabled (opt-in via include_mock)
+        if not is_mock_enabled() and not include_mock:
+            query = query.filter(
+                (DmsDocument.meta_json.is_(None)) |
+                (~DmsDocument.meta_json.like('%"mock": true%'))
+            )
 
         # Folder-level access control
         if allowed_folders is not None:
@@ -240,11 +249,14 @@ async def list_documents(
 @router.get("/{doc_id}")
 async def get_document(doc_id: int, request: Request):
     """Get document detail with current revision, entities, and tags."""
+    from mock_generator import is_mock_enabled
     allowed_folders = get_accessible_folder_ids(request)
 
     with get_dms_session() as session:
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        if not is_mock_enabled() and doc.meta_json and '"mock": true' in doc.meta_json:
             raise HTTPException(status_code=404, detail="Document not found")
         if allowed_folders is not None and doc.folder_id not in allowed_folders:
             raise HTTPException(status_code=403, detail="No access to this document")

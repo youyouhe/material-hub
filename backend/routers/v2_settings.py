@@ -80,6 +80,11 @@ MANAGED_SETTINGS = {
         "description": "Embedding向量维度 (如 4096)",
         "default": "4096",
     },
+    # Mock settings
+    "mock_enabled": {
+        "description": "启用Mock模拟文档生成 (true/false)，关闭后禁止生成并隐藏已有mock文档",
+        "default": "false",
+    },
 }
 
 SENSITIVE_KEYS = {k for k, v in MANAGED_SETTINGS.items() if v.get("sensitive")}

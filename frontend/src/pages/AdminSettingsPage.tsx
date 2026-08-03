@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Save, TestTube2, Eye, EyeOff, Brain, Server, Zap } from 'lucide-react';
+import { Settings, Save, TestTube2, Eye, EyeOff, Brain, Server, Zap, FlaskConical } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getSettings, batchUpdateSettings, testOcr, testLlm, testEmbedding } from '../services/api-v2';
@@ -549,6 +549,47 @@ export default function AdminSettingsPage() {
                 )}
               </div>
             )}
+          </div>
+
+          {/* Mock Section */}
+          <div className="cp-card rounded-lg p-5">
+            <h3 className="text-sm font-orbitron font-semibold text-cp-purple-light mb-4 flex items-center gap-2">
+              <FlaskConical className="w-4 h-4" /> Mock 模拟文档
+            </h3>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-cp-text">启用 Mock 文档生成</div>
+                <p className="text-xs text-cp-dim mt-1 max-w-lg">
+                  生成用于测试/演示的模拟文档。关闭后：禁止新生成（API 返回 403）、文档列表隐藏已有 mock 文档、chat 助手不再提供 mock 工具。已有 mock 文档可用 clean_mock_docs.sh 清理。
+                </p>
+              </div>
+              <button
+                onClick={() => handleChange('mock_enabled', form.mock_enabled === 'true' ? 'false' : 'true')}
+                className={clsx(
+                  'relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4',
+                  form.mock_enabled === 'true' ? 'bg-cp-cyan' : 'bg-cp-border'
+                )}
+              >
+                <span
+                  className={clsx(
+                    'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform',
+                    form.mock_enabled === 'true' && 'translate-x-5'
+                  )}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 mt-6 pt-4 border-t border-cp-border/50">
+              <button
+                onClick={handleSave}
+                disabled={saving || !dirty}
+                className="cp-btn-primary flex items-center gap-1 px-4 py-2 text-sm rounded-lg disabled:opacity-40"
+              >
+                <Save className="w-4 h-4" />
+                {saving ? '保存中...' : '保存设置'}
+              </button>
+            </div>
           </div>
         </div>
       )}

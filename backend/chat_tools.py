@@ -301,6 +301,19 @@ TOOL_DEFINITIONS = [
     },
 ]
 
+MOCK_TOOL_NAMES = {"generate_mock_document", "list_mock_types"}
+
+
+def get_tool_definitions() -> list:
+    """Return tool definitions, excluding mock tools when mock is disabled."""
+    from mock_generator import is_mock_enabled
+    if is_mock_enabled():
+        return TOOL_DEFINITIONS
+    return [
+        t for t in TOOL_DEFINITIONS
+        if t.get("function", {}).get("name") not in MOCK_TOOL_NAMES
+    ]
+
 
 # ============================================================
 # Tool Execution
@@ -308,6 +321,10 @@ TOOL_DEFINITIONS = [
 
 def execute_tool(name: str, arguments: dict) -> str:
     """Execute a tool by name and return the result as a string."""
+    if name in MOCK_TOOL_NAMES:
+        from mock_generator import is_mock_enabled
+        if not is_mock_enabled():
+            return json.dumps({"error": "Mock 功能未启用（系统设置 mock_enabled=false）"}, ensure_ascii=False)
     try:
         if name == "search_documents":
             return _tool_search_documents(**arguments)
