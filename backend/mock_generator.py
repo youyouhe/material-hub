@@ -204,7 +204,7 @@ MOCK_TEMPLATES: Dict[str, dict] = {
         "company_name": lambda: _random_company_name(),
         "legal_person": lambda: _random_person_name(),
         "registered_capital": lambda: f"{random.choice([100,200,500,1000,2000,5000,10000])}万元",
-        "establishment_date": lambda: _random_date(5475, 365),
+        "establishment_date": lambda: _random_date(5475, -1825),
         "business_scope": lambda: _random_scope(),
         "company_type": lambda: random.choice(["有限责任公司(自然人投资或控股)", "有限责任公司(法人独资)", "股份有限公司(非上市)", "其他有限责任公司"]),
         "address": lambda: _random_address(),
@@ -403,7 +403,7 @@ MOCK_TEMPLATES: Dict[str, dict] = {
     "company-profile": {
         "company_name": lambda: _random_company_name(),
         "company_name_en": lambda: random.choice(["Huaxin Technology Co., Ltd.", "Zhongke Data Service Co., Ltd.", "Dingxin Software Co., Ltd."]),
-        "established_date": lambda: _random_date(7300, 0),
+        "established_date": lambda: _random_date(7300, -1825),
         "registered_capital": lambda: f"{random.choice([500, 1000, 2000, 5000, 10000])}万元",
         "industry": lambda: random.choice(_INDUSTRIES),
         "company_type": lambda: random.choice(["有限责任公司", "股份有限公司", "其他有限责任公司"]),
@@ -635,10 +635,12 @@ def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, pe
 
 
 def _compute_invoice_amounts(tax_rate: float = 0.13) -> dict:
-    """Compute a consistent (amount, amount_tax, amount_total) triple.
+    """Compute a consistent (amount, amount_tax, amount_total, amount_cn) set.
 
     amount_total = amount + amount_tax, always — this is the exact
-    relationship the GAPS_ROUND2 report flagged as broken.
+    relationship the GAPS_ROUND2 report flagged as broken. amount_cn (Chinese
+    uppercase numerals) is derived from the same amount_total, fixing the
+    GAPS_ROUND3 finding that amount_cn was an unrelated random pick.
     """
     base_amounts = [50000, 80000, 100000, 150000, 200000, 280000, 350000,
                      500000, 680000, 800000, 1000000]
@@ -649,7 +651,75 @@ def _compute_invoice_amounts(tax_rate: float = 0.13) -> dict:
         "amount": f"¥{amount:,.2f}",
         "amount_tax": f"¥{amount_tax:,.2f}",
         "amount_total": f"¥{amount_total:,.2f}",
+        "amount_cn": _amount_to_chinese(amount_total),
+        # Bank transfer is the norm for performance/qualification evidence
+        # (proves real fund flow); cash/draft don't serve that purpose.
+        "payment_method": "银行转账",
     }
+
+
+_CN_DIGITS = "零壹贰叁肆伍陆柒捌玖"
+_CN_UNITS = ["", "拾", "佰", "仟"]
+_CN_BIG_UNITS = ["", "万", "亿"]
+
+
+def _chinese_group(n: int) -> str:
+    """Convert a 0-9999 int to Chinese numerals (no big-unit suffix), e.g. 6482 -> 陆仟肆佰捌拾贰, 31 -> 叁拾壹."""
+    digits = [(n // 1000) % 10, (n // 100) % 10, (n // 10) % 10, n % 10]
+    units = ["仟", "佰", "拾", ""]
+    out = ""
+    seen_nonzero = False
+    pending_zero = False
+    for digit, unit in zip(digits, units):
+        if digit == 0:
+            if seen_nonzero:
+                pending_zero = True
+            continue
+        if pending_zero:
+            out += "零"
+            pending_zero = False
+        out += _CN_DIGITS[digit] + unit
+        seen_nonzero = True
+    return out
+
+
+def _amount_to_chinese(amount: float) -> str:
+    """Convert a RMB amount to Chinese uppercase numerals, e.g. 316482.17 -> 叁拾壹万陆仟肆佰捌拾贰元壹角柒分."""
+    yuan = int(amount)
+    frac = round((amount - yuan) * 100)  # total fen, e.g. 17 -> 1角7分
+    jiao, fen = divmod(frac, 10)
+
+    if yuan == 0:
+        yuan_cn = "零"
+    else:
+        groups = []
+        n = yuan
+        while n > 0:
+            groups.append(n % 10000)
+            n //= 10000
+        parts = []
+        emitted = False
+        pending_zero = False
+        for i in range(len(groups) - 1, -1, -1):
+            group = groups[i]
+            if group == 0:
+                if emitted:
+                    pending_zero = True
+                continue
+            if emitted and (pending_zero or group < 1000):
+                parts.append("零")
+            parts.append(_chinese_group(group) + _CN_BIG_UNITS[i])
+            emitted = True
+            pending_zero = False
+        yuan_cn = "".join(parts)
+
+    result = yuan_cn + "元"
+    if jiao == 0 and fen == 0:
+        result += "整"
+    else:
+        result += (_CN_DIGITS[jiao] + "角") if jiao else "零"
+        result += (_CN_DIGITS[fen] + "分") if fen else ""
+    return result
 
 
 def _build_mock_summary(doc_type_code: str, mock_data: dict) -> str:
@@ -969,6 +1039,56 @@ def generate_mock_image(
     return buf.getvalue()
 
 
+# Canonical entity attribute keys we persist/reuse across calls for the same
+# entity_name — mirrors the fields checked in the consistency-override block.
+_ENTITY_BASELINE_KEYS = (
+    "unified_social_credit_code", "credit_code", "registered_capital",
+    "address", "establishment_date", "company_type", "business_scope",
+    "legal_person",
+)
+
+
+def _persist_entity_baseline(entity_name: str, mock_data: dict) -> None:
+    """Write this call's finalized baseline fields into dms_entities.attributes.
+
+    Best-effort: creates the org Entity if it doesn't exist yet, merges new
+    keys into existing attributes (never overwrites a key that's already set,
+    so the first generation's values win and stay stable across all later
+    calls — including ones made after mock documents were cleaned up).
+    """
+    from dms_models import get_dms_session, Entity
+
+    new_attrs = {k: mock_data[k] for k in _ENTITY_BASELINE_KEYS if mock_data.get(k)}
+    if not new_attrs:
+        return
+    try:
+        with get_dms_session() as session:
+            entity = session.query(Entity).filter(
+                Entity.entity_type == "org", Entity.name == entity_name,
+            ).first()
+            if entity:
+                try:
+                    attrs = json.loads(entity.attributes) if entity.attributes else {}
+                except (json.JSONDecodeError, TypeError):
+                    attrs = {}
+                changed = False
+                for k, v in new_attrs.items():
+                    if not attrs.get(k):
+                        attrs[k] = v
+                        changed = True
+                if changed:
+                    entity.attributes = json.dumps(attrs, ensure_ascii=False)
+            else:
+                entity = Entity(
+                    entity_type="org",
+                    name=entity_name,
+                    attributes=json.dumps(new_attrs, ensure_ascii=False),
+                )
+                session.add(entity)
+    except Exception as e:
+        logger.warning("Failed to persist entity baseline for %s: %s", entity_name, e)
+
+
 # ── Main entry point ──────────────────────────────────────────────────
 
 def generate_mock(
@@ -1044,29 +1164,29 @@ def generate_mock(
                     }
     _existing_overrides = {}
     if entity_name:
-        from dms_models import Entity, DocumentEntity, DmsDocument
+        from dms_models import Entity
         with get_dms_session() as session:
-            # Search ALL documents for this entity_name in extracted_data
-            # (entity extraction may not create org entities, so we bypass entity links)
-            all_docs = session.query(DmsDocument).filter(
-                DmsDocument.meta_json.like(f'%"company_name": "{entity_name}"%')
-            ).all()
-            for doc in all_docs:
-                try: meta = json.loads(doc.meta_json or "{}")
-                except: continue
-                ed = meta.get("extracted_data", {})
-                if ed.get("company_name") != entity_name:
-                    continue
+            # Persistent baseline: dms_entities.attributes survives independently of
+            # mock document cleanup (unlike scanning meta_json on DmsDocument, which
+            # loses the baseline the moment old mock docs get deleted — this was the
+            # root cause of "entity baseline drifts to a new random person every time
+            # old mock docs are cleared" reported in GAPS_ROUND3).
+            org_entity = session.query(Entity).filter(
+                Entity.entity_type == "org", Entity.name == entity_name,
+            ).first()
+            if org_entity and org_entity.attributes:
+                try:
+                    attrs = json.loads(org_entity.attributes)
+                except (json.JSONDecodeError, TypeError):
+                    attrs = {}
                 for k in ("unified_social_credit_code", "credit_code",
                            "registered_capital", "address",
                            "establishment_date", "company_type",
                            "business_scope", "legal_person"):
-                    if k in ed and k not in _existing_overrides:
-                        _existing_overrides[k] = ed[k]
-                # Also get person name from linked person entities
-                _p = ed.get("legal_person")
-                if _p and not person_name:
-                    person_name = _p
+                    if attrs.get(k):
+                        _existing_overrides[k] = attrs[k]
+                if attrs.get("legal_person") and not person_name:
+                    person_name = attrs["legal_person"]
     # Generate mock data
     mock_data = generate_mock_data(doc_type_code, entity_name, person_name)
 
@@ -1106,6 +1226,12 @@ def generate_mock(
                     mock_data[alias] = canonical_value
             logger.info("Entity consistency: using existing '%s' for entity %s",
                         canonical_key, entity_name)
+
+    # Persist the (possibly newly-generated) baseline attributes back to
+    # dms_entities, so subsequent calls for this entity_name stay consistent
+    # even after this document — or all mock documents — get cleaned up.
+    if entity_name:
+        _persist_entity_baseline(entity_name, mock_data)
 
     # Generate PNG image
     png_bytes = generate_mock_image(doc_type_name, doc_type_code, mock_data, entity_name, person_name)

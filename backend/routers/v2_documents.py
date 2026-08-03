@@ -167,6 +167,8 @@ async def list_documents(
     tag_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
     mock_reason: Optional[str] = Query(None),
+    entity_name: Optional[str] = Query(None, description="Filter mock docs by meta_json.entity_names"),
+    tender_project: Optional[str] = Query(None, description="Filter mock docs by meta_json.requirement_context.tender_project"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -217,6 +219,12 @@ async def list_documents(
 
         if mock_reason:
             query = query.filter(DmsDocument.meta_json.like(f'%"mock_reason": "{mock_reason}"%'))
+
+        if entity_name:
+            query = query.filter(DmsDocument.meta_json.like(f'%"entity_names": [%"{entity_name}"%'))
+
+        if tender_project:
+            query = query.filter(DmsDocument.meta_json.like(f'%"tender_project": "{tender_project}"%'))
 
         total = query.count()
         docs = query.order_by(DmsDocument.updated_at.desc()).offset(offset).limit(limit).all()
