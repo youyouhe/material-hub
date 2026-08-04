@@ -221,12 +221,15 @@ def _like_fallback_search(session, raw_query: str, limit: int) -> list[int]:
     return [r[0] for r in results]
 
 
-def search_index(query: str, limit: int = 50, offset: int = 0):
+def search_index(query: str, limit: int = 50, offset: int = 0, include_mock: bool = False):
     """
     Search the FTS index with BM25 ranking and partial matching.
 
     Uses FTS5 prefix queries first, then falls back to LIKE search
     if not enough results are found.
+
+    include_mock: when True, mock documents are kept even while mock mode is
+    disabled (admin/audit use, SmartBid 契约 3.3).
 
     Returns list of dicts: [{doc_id, rank, snippet}, ...]
     """
@@ -276,7 +279,7 @@ def search_index(query: str, limit: int = 50, offset: int = 0):
 
         # Hide mock documents from search results when mock feature is disabled
         from mock_generator import is_mock_enabled
-        if all_ids and not is_mock_enabled():
+        if all_ids and not include_mock and not is_mock_enabled():
             mock_rows = session.query(DmsDocument.id).filter(
                 DmsDocument.id.in_(all_ids),
                 DmsDocument.meta_json.like('%"mock": true%'),

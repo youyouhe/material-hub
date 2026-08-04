@@ -19,11 +19,19 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 MOCK_DIR = DATA_DIR / "dms_files" / "mock"
 
 
+class MockDisabledError(Exception):
+    """Raised when a mock endpoint is called while mock mode is disabled.
+
+    Handled in main.py → 403 with machine-readable error.code == "MOCK_DISABLED"
+    (SmartBid contract: terminal error, callers must not retry or fake success).
+    """
+
+
 def _require_mock_enabled():
-    """Raise 403 when mock generation is disabled via system settings."""
+    """Raise 403 MOCK_DISABLED when mock generation is disabled via system settings."""
     from mock_generator import is_mock_enabled
     if not is_mock_enabled():
-        raise HTTPException(status_code=403, detail="Mock 功能未启用（系统设置 mock_enabled=false）")
+        raise MockDisabledError("当前环境已禁用 mock 材料生成")
 
 
 class MockGenerateRequest(BaseModel):

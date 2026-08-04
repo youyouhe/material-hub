@@ -247,7 +247,8 @@ async def list_documents(
 
 
 @router.get("/{doc_id}")
-async def get_document(doc_id: int, request: Request):
+async def get_document(doc_id: int, request: Request,
+                       include_mock: bool = Query(False, description="mock关闭时仍允许查看mock文档（管理/审计用途）")):
     """Get document detail with current revision, entities, and tags."""
     from mock_generator import is_mock_enabled
     allowed_folders = get_accessible_folder_ids(request)
@@ -256,7 +257,7 @@ async def get_document(doc_id: int, request: Request):
         doc = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        if not is_mock_enabled() and doc.meta_json and '"mock": true' in doc.meta_json:
+        if not include_mock and not is_mock_enabled() and doc.meta_json and '"mock": true' in doc.meta_json:
             raise HTTPException(status_code=404, detail="Document not found")
         if allowed_folders is not None and doc.folder_id not in allowed_folders:
             raise HTTPException(status_code=403, detail="No access to this document")
@@ -533,6 +534,8 @@ async def create_revision(doc_id: int, data: RevisionCreate, request: Request):
                 if meta.get("mock") and meta.get("mock_reason") == "generated_for_requirement":
                     meta.pop("mock", None)
                     meta.pop("mock_reason", None)
+                    # Leave an auditable trace so mock_status derives to "replaced"
+                    meta["mock_replaced"] = True
                     doc.meta_json = json.dumps(meta, ensure_ascii=False)
                     # Remove MOCK tag from title
                     doc.title = doc.title.replace("（MOCK-待替换）", "").replace("(MOCK-待替换)", "")

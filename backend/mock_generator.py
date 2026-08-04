@@ -606,7 +606,22 @@ def _llm_generate_content(
 
 # Doc types whose entity_name refers to a person, not an organization —
 # used for entity_type resolution (person vs org) and baseline skipping.
+# Fallback list; the primary source of truth is dms_doc_types.category.
 _PERSONNEL_DOC_TYPES = ("id-card", "education-cert", "professional-cert")
+
+
+def _is_personnel_doc_type(doc_type_code: str, session=None) -> bool:
+    """人员类材料判定：优先按 dms_doc_types.category == 'personnel'（新增人员类
+    doc type 无需改代码），查不到时回落到硬编码名单。"""
+    if session is not None:
+        try:
+            from dms_models import DocType
+            dt = session.query(DocType).filter(DocType.code == doc_type_code).first()
+            if dt:
+                return dt.category == "personnel"
+        except Exception:
+            pass
+    return doc_type_code in _PERSONNEL_DOC_TYPES
 
 
 def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, person_name: Optional[str] = None) -> dict:
@@ -1085,14 +1100,13 @@ def _persist_entity_baseline(entity_name: str, mock_data: dict, doc_type_code: s
     """
     from dms_models import get_dms_session, Entity
 
-    if doc_type_code in _PERSONNEL_DOC_TYPES:
-        return
-
     new_attrs = {k: mock_data[k] for k in _ENTITY_BASELINE_KEYS if mock_data.get(k)}
     if not new_attrs:
         return
     try:
         with get_dms_session() as session:
+            if _is_personnel_doc_type(doc_type_code, session):
+                return
             entity = session.query(Entity).filter(
                 Entity.entity_type == "org", Entity.name == entity_name,
             ).first()
@@ -1129,7 +1143,7 @@ def _resolve_primary_entity(session, doc_type_code: str, entity_name: str):
     """
     from dms_models import Entity
 
-    entity_type = "person" if doc_type_code in _PERSONNEL_DOC_TYPES else "org"
+    entity_type = "person" if _is_personnel_doc_type(doc_type_code, session) else "org"
     entity = session.query(Entity).filter(
         Entity.entity_type == entity_type, Entity.name == entity_name,
     ).first()

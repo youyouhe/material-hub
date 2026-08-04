@@ -38,6 +38,7 @@ def _format_result(doc: DmsDocument, snippet: str = None) -> dict:
         "id": doc.id,
         "title": doc.title,
         "status": doc.status,
+        **doc.mock_fields(),
         "doc_type": {"id": doc.doc_type.id, "name": doc.doc_type.name, "code": doc.doc_type.code} if doc.doc_type else None,
         "folder": {"id": doc.folder.id, "name": doc.folder.name, "path": doc.folder.path} if doc.folder else None,
         "entity_names": entity_names,
@@ -61,6 +62,7 @@ async def search(
     expiry_before: Optional[str] = Query(None),
     expiry_after: Optional[str] = Query(None),
     sort: str = Query("relevance"),
+    include_mock: bool = Query(False, description="mock关闭时仍显式包含mock文档（管理/审计用途）"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -71,25 +73,25 @@ async def search(
         return _keyword_search(
             q.strip(), folder_id, doc_type_id, entity_id, tag_id,
             status, expiry_before, expiry_after, sort, limit, offset,
-            allowed_folders=allowed_folders,
+            allowed_folders=allowed_folders, include_mock=include_mock,
         )
     else:
         return _facet_search(
             folder_id, doc_type_id, entity_id, tag_id,
             status, expiry_before, expiry_after, sort, limit, offset,
-            allowed_folders=allowed_folders,
+            allowed_folders=allowed_folders, include_mock=include_mock,
         )
 
 
 def _keyword_search(
     q, folder_id, doc_type_id, entity_id, tag_id,
     status, expiry_before, expiry_after, sort, limit, offset,
-    *, allowed_folders=None,
+    *, allowed_folders=None, include_mock=False,
 ):
     """Search using FTS5 with BM25 ranking, then apply SQL facet filters."""
     # Get FTS matches (fetch more than needed since we'll filter)
     fts_limit = limit + offset + 200  # over-fetch for post-filtering
-    fts_result = search_index(q, limit=fts_limit, offset=0)
+    fts_result = search_index(q, limit=fts_limit, offset=0, include_mock=include_mock)
     matched_ids = fts_result["doc_ids"]
     details = fts_result["details"]
 
@@ -102,7 +104,8 @@ def _keyword_search(
         # Apply facet filters
         query = _apply_facets(query, folder_id, doc_type_id, entity_id, tag_id,
                               status, expiry_before, expiry_after,
-                              allowed_folders=allowed_folders, session=session)
+                              allowed_folders=allowed_folders, session=session,
+                              include_mock=include_mock)
 
         total = query.count()
 
@@ -129,7 +132,7 @@ def _keyword_search(
 def _facet_search(
     folder_id, doc_type_id, entity_id, tag_id,
     status, expiry_before, expiry_after, sort, limit, offset,
-    *, allowed_folders=None,
+    *, allowed_folders=None, include_mock=False,
 ):
     """Search using SQL filters only (no keyword)."""
     with get_dms_session() as session:
@@ -137,7 +140,8 @@ def _facet_search(
 
         query = _apply_facets(query, folder_id, doc_type_id, entity_id, tag_id,
                               status, expiry_before, expiry_after,
-                              allowed_folders=allowed_folders, session=session)
+                              allowed_folders=allowed_folders, session=session,
+                              include_mock=include_mock)
 
         total = query.count()
 
@@ -155,8 +159,18 @@ def _facet_search(
 
 def _apply_facets(query, folder_id, doc_type_id, entity_id, tag_id,
                   status, expiry_before, expiry_after, *, allowed_folders=None,
-                  session=None):
+                  session=None, include_mock=False):
     """Apply facet filters to a query."""
+    # Read-side mock isolation (SmartBid 契约 3.3): hidden while mock mode is
+    # disabled unless explicitly requested via include_mock
+    if not include_mock:
+        from mock_generator import is_mock_enabled
+        if not is_mock_enabled():
+            query = query.filter(
+                (DmsDocument.meta_json.is_(None)) |
+                (~DmsDocument.meta_json.like('%"mock": true%'))
+            )
+
     # Folder-level access control
     if allowed_folders is not None:
         if not allowed_folders:

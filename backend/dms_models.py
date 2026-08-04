@@ -159,6 +159,28 @@ class DmsDocument(DmsBase):
                 return rev
         return None
 
+    def mock_fields(self) -> dict:
+        """Derive first-class mock fields from meta_json (SmartBid 契约 3.3).
+
+        is_mock: True while meta.mock is set.
+        mock_status: "pending_replacement" (mock awaiting real-content swap),
+        "replaced" (a real revision replaced the mock — create_revision records
+        meta.mock_replaced), or None for non-mock documents.
+        """
+        import json
+        meta = None
+        if self.meta_json:
+            try:
+                meta = json.loads(self.meta_json)
+            except (json.JSONDecodeError, TypeError):
+                meta = None
+        meta = meta or {}
+        if meta.get("mock"):
+            return {"is_mock": True, "mock_status": "pending_replacement"}
+        if meta.get("mock_replaced"):
+            return {"is_mock": False, "mock_status": "replaced"}
+        return {"is_mock": False, "mock_status": None}
+
     def to_dict(self, include_revision=True, include_relations=True):
         import json
         meta = None
@@ -176,6 +198,7 @@ class DmsDocument(DmsBase):
             "description": self.description,
             "status": self.status,
             "metadata": meta,
+            **self.mock_fields(),
             "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat() if self.created_at else None,

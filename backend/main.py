@@ -23,7 +23,8 @@ from dms_models import init_dms_db
 from seed_data import seed_all
 from kb_database import init_kb_db
 from routers import auth  # Legacy auth — keep for transition period
-from routers import v2_folders, v2_doc_types, v2_documents, v2_files, v2_entities, v2_tags, v2_compat, v2_upload, v2_search, v2_expiry, v2_admin, v2_audit, v2_bids, v2_bid_requirements, v2_migrate, v2_settings, v2_agents, v2_chat, v2_auth, v2_transfer, v2_roles, v2_kb, v2_complete, v2_mock
+from routers import v2_folders, v2_doc_types, v2_documents, v2_files, v2_entities, v2_tags, v2_compat, v2_upload, v2_search, v2_expiry, v2_admin, v2_audit, v2_bids, v2_bid_requirements, v2_migrate, v2_settings, v2_agents, v2_chat, v2_auth, v2_transfer, v2_roles, v2_kb, v2_complete, v2_mock, v2_capabilities
+from routers.v2_mock import MockDisabledError
 from auth import validate_session
 
 logging.basicConfig(
@@ -79,6 +80,37 @@ if hasattr(signal, 'SIGHUP'):
 atexit.register(exit_handler)
 
 logger.info("✅ 信号处理器已注册: SIGTERM, SIGINT, SIGHUP")
+
+
+@app.exception_handler(MockDisabledError)
+async def mock_disabled_handler(request: Request, exc: MockDisabledError):
+    """mock 关闭时的写侧硬错误（SmartBid 契约 3.2）：机器可读 code，terminal。"""
+    return JSONResponse(
+        status_code=403,
+        content={
+            "error": {
+                "code": "MOCK_DISABLED",
+                "message": str(exc) or "当前环境已禁用 mock 材料生成",
+                "mock_enabled": False,
+            }
+        },
+    )
+
+
+@app.middleware("http")
+async def mock_mode_header_middleware(request: Request, call_next):
+    """Attach X-MaterialHub-Mock-Mode to every response (SmartBid 契约 3.1 防御纵深).
+
+    Registered after auth_middleware so it wraps it (outermost) and the header
+    is present even on 401/403 early responses.
+    """
+    response = await call_next(request)
+    try:
+        from mock_generator import is_mock_enabled
+        response.headers["X-MaterialHub-Mock-Mode"] = "enabled" if is_mock_enabled() else "disabled"
+    except Exception:
+        pass
+    return response
 
 
 @app.middleware("http")
@@ -199,6 +231,7 @@ app.include_router(v2_transfer.router)
 app.include_router(v2_roles.router)
 app.include_router(v2_kb.router)
 app.include_router(v2_mock.router)
+app.include_router(v2_capabilities.router)
 
 
 @app.on_event("startup")
