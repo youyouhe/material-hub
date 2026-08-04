@@ -98,22 +98,6 @@ async def mock_disabled_handler(request: Request, exc: MockDisabledError):
 
 
 @app.middleware("http")
-async def mock_mode_header_middleware(request: Request, call_next):
-    """Attach X-MaterialHub-Mock-Mode to every response (SmartBid 契约 3.1 防御纵深).
-
-    Registered after auth_middleware so it wraps it (outermost) and the header
-    is present even on 401/403 early responses.
-    """
-    response = await call_next(request)
-    try:
-        from mock_generator import is_mock_enabled
-        response.headers["X-MaterialHub-Mock-Mode"] = "enabled" if is_mock_enabled() else "disabled"
-    except Exception:
-        pass
-    return response
-
-
-@app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     """Authentication middleware to protect API endpoints."""
     # Exempt paths that don't require authentication
@@ -202,6 +186,23 @@ async def auth_middleware(request: Request, call_next):
         )
 
     return await call_next(request)
+
+
+@app.middleware("http")
+async def mock_mode_header_middleware(request: Request, call_next):
+    """Attach X-MaterialHub-Mock-Mode to every response (SmartBid 契约 3.1 防御纵深).
+
+    Registered AFTER auth_middleware so it is added last → outermost in the
+    Starlette stack, meaning auth's early 401/403 responses still pass through
+    here and get the header.
+    """
+    response = await call_next(request)
+    try:
+        from mock_generator import is_mock_enabled
+        response.headers["X-MaterialHub-Mock-Mode"] = "enabled" if is_mock_enabled() else "disabled"
+    except Exception:
+        pass
+    return response
 
 
 app.include_router(auth.router)  # Legacy auth — keep for transition
