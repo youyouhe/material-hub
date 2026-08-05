@@ -448,6 +448,73 @@ MOCK_TEMPLATES: Dict[str, dict] = {
         "description": lambda: "本文档详细描述了" + random.choice(_PROJECT_TYPES) + "项目的技术方案和实现细节。",
         "tech_stack": lambda: random.choice(["Java/Spring Cloud/MySQL/Redis", "Python/FastAPI/PostgreSQL", "Go/Kubernetes/Docker", "React/Node.js/MongoDB"]),
     },
+    "bank-receipt": {
+        # 业绩三件套之一：合同 + 银行进账凭证 + 发票。收款方=本公司(payee)。
+        # 金额↔大写在 generate_mock_data post-processing 中统一自洽。
+        "payee": lambda: _random_company_name(),
+        "payer": lambda: random.choice(["XX市大数据管理局", "XX省信息中心", "XX区人民政府", "XX集团有限公司", "XX省政务服务中心"]),
+        "bank": lambda: random.choice(["中国工商银行", "中国建设银行", "中国银行", "中国农业银行", "交通银行", "招商银行"]) + random.choice(["北京分行", "上海分行", "深圳分行", "杭州分行"]),
+        "voucher_number": lambda: f"VB{datetime.utcnow().year}{random.randint(10000000, 99999999)}",
+        "receipt_date": lambda: _random_date(365, 0),
+        "contract_number": lambda: f"HT-{datetime.utcnow().year}{random.randint(1000, 9999)}",
+        # amount / amount_cn 由 generate_mock_data post-processing (_amount_pair) 统一自洽写入
+        "currency": lambda: "人民币",
+        "payee_account": lambda: f"{random.randint(10**16, 10**17 - 1)}",
+        "payer_account": lambda: f"{random.randint(10**16, 10**17 - 1)}",
+    },
+    "social-insurance": {
+        # personnel 类：主实体=参保人(授权代表)。缴纳单位为次级公司字段。
+        "name": lambda: _random_person_name(),
+        "gender": lambda: _random_id_number()[1],
+        "id_number": lambda: _random_id_number()[0],
+        "company_name": lambda: _random_company_name(),
+        "social_security_agency": lambda: random.choice([
+            "北京市社会保险基金管理中心", "上海市社会保险事业管理中心", "深圳市社会保险基金管理局",
+            "杭州市社会保险管理服务中心", "成都市社会保险事业管理处"]),
+        "insurance_type": lambda: random.choice(["养老保险", "医疗保险", "失业保险", "工伤保险", "生育保险", "五险"]),
+        "consecutive_months": lambda: random.choice(["连续3个月", "连续6个月", "连续12个月"]),
+        "period_start": lambda: _random_date(180, 120),
+        "period_end": lambda: _random_date(60, 0),
+        "payment_base": lambda: f"¥{random.choice([5000, 8000, 10000, 12000, 15000, 18000, 20000]):,.2f}",
+        "payment_status": lambda: "正常缴交",
+        "issue_date": lambda: _random_date(60, 0),
+    },
+    "tax-payment": {
+        # 完税证明（实际缴税记录），与"纳税信用A级证书"(qualification-cert)区分。
+        # 纳税人=本公司。tax_amount↔amount_cn 在 generate_mock_data post-processing 中统一自洽。
+        "taxpayer": lambda: _random_company_name(),
+        "tax_type": lambda: random.choice(["增值税", "企业所得税", "个人所得税", "印花税", "城市维护建设税"]),
+        "tax_period": lambda: f"{random.choice([2023, 2024, 2025])}年度",
+        "tax_authority": lambda: random.choice([
+            "国家税务总局北京市税务局", "国家税务总局上海市税务局", "国家税务总局深圳市税务局",
+            "国家税务总局杭州市税务局", "国家税务总局成都市税务局"]),
+        "payment_voucher": lambda: f"{random.choice([2023, 2024, 2025])}京税完字第{random.randint(10000000, 99999999)}号",
+        "issue_date": lambda: _random_date(365, 0),
+    },
+    "bid-bond": {
+        # 投标保证金缴纳证明（资格必查，未交直接废标）。收款方=采购代理机构。
+        # 金额↔大写在 generate_mock_data post-processing 中统一自洽。
+        "bidder_name": lambda: _random_company_name(),
+        "payee": lambda: random.choice([
+            "XX省政府采购中心", "XX市公共资源交易中心", "XX区招投标服务中心", "XX招标代理有限公司"]),
+        # amount / amount_cn 由 generate_mock_data post-processing (_amount_pair) 统一自洽写入
+        "payment_date": lambda: _random_date(30, 0),
+        "bank": lambda: random.choice(["中国工商银行", "中国建设银行", "中国银行", "中国农业银行", "交通银行"]) + random.choice(["营业部", "分行营业部"]),
+        "voucher_number": lambda: f"VB{datetime.utcnow().year}{random.randint(10000000, 99999999)}",
+        "tender_project": lambda: random.choice(_PROJECT_TYPES) + random.choice(["项目", "采购项目", "建设项目"]),
+        "bid_number": lambda: f"Z{datetime.utcnow().year}{random.randint(10000, 99999)}",
+    },
+    "service-point-proof": {
+        # 本地服务网点证明（评分项）。投标主体=本公司。
+        "company_name": lambda: _random_company_name(),
+        "branch": lambda: random.choice(_COMPANY_PREFIXES) + random.choice(["本地服务网点", "售后服务网点", "分公司", "办事处"]),
+        "service_address": lambda: _random_address(),
+        "lease_period": lambda: f"{_random_date(1095, 365)} 至 {_random_date(365, 1095)}",
+        "contact_person": lambda: _random_person_name(),
+        "contact_phone": lambda: f"0{random.randint(10, 99)}-{random.randint(1000000, 9999999)}",
+        "proof_type": lambda: random.choice(["房屋租赁合同", "营业执照", "房屋产权证明"]),
+        "issue_date": lambda: _random_date(180, 0),
+    },
 }
 
 
@@ -536,6 +603,10 @@ _LLM_CONTENT_FIELDS = {
         "project_description": "项目描述，简要说明建设内容，须与 project_name 一致",
         "contract_name": "合同名称类型（如：软件开发合同、销售合同）",
     },
+    "service-point-proof": {
+        "service_address": "本地服务网点地址，应体现招标项目所在地（如招标在杭州则给杭州的地址），不能是无关城市",
+        "branch": "网点/分公司名称，含与招标项目所在地一致的地名",
+    },
 }
 
 _LLM_CONTENT_DOC_TYPES = frozenset(_LLM_CONTENT_FIELDS.keys())
@@ -607,7 +678,7 @@ def _llm_generate_content(
 # Doc types whose entity_name refers to a person, not an organization —
 # used for entity_type resolution (person vs org) and baseline skipping.
 # Fallback list; the primary source of truth is dms_doc_types.category.
-_PERSONNEL_DOC_TYPES = ("id-card", "education-cert", "professional-cert")
+_PERSONNEL_DOC_TYPES = ("id-card", "education-cert", "professional-cert", "social-insurance")
 
 
 def _is_personnel_doc_type(doc_type_code: str, session=None) -> bool:
@@ -651,6 +722,12 @@ def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, pe
             data["manufacturer"] = entity_name
         elif "authorizer" in template:
             data["authorizer"] = entity_name
+        elif "payee" in template:
+            # bank-receipt / bid-bond: 收款方 = 本公司（投标主体）
+            data["payee"] = entity_name
+        elif "taxpayer" in template:
+            # tax-payment: 纳税人 = 本公司
+            data["taxpayer"] = entity_name
 
     # Override person name fields if person_name is provided
     if person_name:
@@ -662,12 +739,23 @@ def generate_mock_data(doc_type_code: str, entity_name: Optional[str] = None, pe
             data["name"] = person_name
         elif doc_type_code == "authorization":
             data["authorized_party"] = person_name
+        elif doc_type_code == "service-point-proof":
+            data["contact_person"] = person_name
 
     # invoice: amount/amount_tax/amount_total are computed together so the
     # arithmetic always holds (previously each was an independent random draw,
     # so amount + amount_tax could land anywhere relative to amount_total).
     if doc_type_code == "invoice":
         data.update(_compute_invoice_amounts())
+
+    # bank-receipt / bid-bond / tax-payment: amount 与 amount_cn 必须来自同一数字，
+    # 否则模板里两个独立 lambda 会各取各的、金额与大写对不上（单文档自洽）。
+    if doc_type_code == "bank-receipt":
+        data.update(_amount_pair([100000, 150000, 200000, 300000, 500000, 680000, 800000, 1000000]))
+    elif doc_type_code == "bid-bond":
+        data.update(_amount_pair([20000, 50000, 100000, 200000]))
+    elif doc_type_code == "tax-payment":
+        data.update(_amount_pair([50000, 100000, 200000, 300000, 500000], amount_key="tax_amount"))
 
     return data
 
@@ -693,6 +781,23 @@ def _compute_invoice_amounts(tax_rate: float = 0.13) -> dict:
         # Bank transfer is the norm for performance/qualification evidence
         # (proves real fund flow); cash/draft don't serve that purpose.
         "payment_method": "银行转账",
+    }
+
+
+def _amount_pair(base_amounts, amount_key="amount"):
+    """Pick a random amount from base_amounts and return a self-consistent
+    {<amount_key>, amount_cn} pair (amount_cn derived from the same number via
+    _amount_to_chinese). Used by bank-receipt/bid-bond/tax-payment so the
+    numeric amount and the Chinese-uppercase amount never disagree within a
+    single generated document — the within-doc analogue of the R006 issue,
+    which itself (cross-document consistency) is intentionally out of scope.
+    amount_key lets tax-payment write 实缴税额 under its native field name
+    `tax_amount` instead of a redundant generic `amount`.
+    """
+    amount = random.choice(base_amounts) + random.randint(0, 9999) / 100
+    return {
+        amount_key: f"¥{amount:,.2f}",
+        "amount_cn": _amount_to_chinese(amount),
     }
 
 
@@ -789,6 +894,12 @@ def _build_mock_summary(doc_type_code: str, mock_data: dict) -> str:
         "company-profile": ["company_name", "industry", "registered_capital",
                             "core_business", "address"],
         "technical-doc": ["doc_title", "project_name", "author", "tech_stack"],
+        "bank-receipt": ["payee", "payer", "amount", "contract_number", "receipt_date"],
+        "social-insurance": ["name", "company_name", "social_security_agency",
+                            "insurance_type", "consecutive_months"],
+        "tax-payment": ["taxpayer", "tax_type", "tax_period", "tax_amount", "tax_authority"],
+        "bid-bond": ["bidder_name", "payee", "amount", "tender_project", "bid_number"],
+        "service-point-proof": ["company_name", "branch", "service_address", "contact_person"],
     }
     keys = type_keys.get(doc_type_code, list(mock_data.keys())[:6])
     parts = []
@@ -1038,6 +1149,37 @@ def generate_mock_image(
         "doc_type": "文档类型",
         "confidentiality_level": "密级",
         "tech_stack": "技术栈",
+        # ── bank-receipt / bid-bond ──
+        "payee": "收款方",
+        "payer": "付款方",
+        "bank": "开户/汇出银行",
+        "voucher_number": "银行回单号",
+        "receipt_date": "到账日期",
+        "payment_date": "到账日期",
+        "currency": "币种",
+        "payee_account": "收款账号",
+        "payer_account": "付款账号",
+        "tender_project": "招标项目",
+        # ── social-insurance ──
+        "social_security_agency": "社保经办机构",
+        "insurance_type": "险种",
+        "consecutive_months": "连续缴纳月数",
+        "period_start": "缴纳起始月",
+        "period_end": "缴纳截止月",
+        "payment_base": "缴纳基数",
+        "payment_status": "缴纳状态",
+        # ── tax-payment ──
+        "taxpayer": "纳税人名称",
+        "tax_type": "税种",
+        "tax_period": "税款所属期",
+        "tax_amount": "实缴税额",
+        "tax_authority": "主管税务机关",
+        "payment_voucher": "完税凭证号",
+        # ── service-point-proof ──
+        "branch": "网点/分公司",
+        "service_address": "网点地址",
+        "lease_period": "租赁期限",
+        "proof_type": "证明类型",
     }
 
     for key, value in mock_data.items():

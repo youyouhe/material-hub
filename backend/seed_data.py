@@ -341,8 +341,10 @@ def ensure_new_types():
     with get_dms_session() as session:
         # New folders to ensure exist (parent_name -> list of child names)
         folder_additions = {
-            "公司资质": ["授权文件", "产品资料", "公司简介", "审计报告"],
-            "业绩材料": ["发票", "技术文档"],
+            "公司资质": ["授权文件", "产品资料", "公司简介", "审计报告", "完税证明", "服务网点证明"],
+            "人员资质": ["社保证明"],
+            "业绩材料": ["发票", "技术文档", "进账凭证"],
+            "投标文件": ["投标保证金"],
         }
         for parent_name, children in folder_additions.items():
             parent = session.query(Folder).filter(Folder.name == parent_name, Folder.parent_id == None).first()
@@ -400,6 +402,51 @@ def ensure_new_types():
                 {"key": "report_type", "type": "string", "label": "报告类型"},
                 {"key": "period", "type": "string", "label": "报告期间"},
                 {"key": "issuer", "type": "string", "label": "出具机构"},
+            ]},
+            # ── 资格必查/评分材料（SmartBid TYPECODE_EXPANSION_20260805）──
+            {"name": "银行进账凭证", "code": "bank-receipt", "category": "project", "icon": "credit-card",
+             "description": "业绩三件套之一：合同+银行进账凭证+发票的银行进账佐证", "metadata_schema": [
+                {"key": "payee", "type": "string", "label": "收款方"},
+                {"key": "payer", "type": "string", "label": "付款方"},
+                {"key": "amount", "type": "string", "label": "进账金额"},
+                {"key": "receipt_date", "type": "date", "label": "到账日期"},
+                {"key": "contract_number", "type": "string", "label": "关联合同编号"},
+                {"key": "voucher_number", "type": "string", "label": "银行回单号"},
+            ]},
+            {"name": "社保证明", "code": "social-insurance", "category": "personnel", "icon": "shield",
+             "description": "授权代表/团队人员连续缴纳社保证明（资格必查）", "metadata_schema": [
+                {"key": "name", "type": "string", "label": "参保人"},
+                {"key": "company_name", "type": "string", "label": "缴纳单位"},
+                {"key": "social_security_agency", "type": "string", "label": "社保经办机构"},
+                {"key": "insurance_type", "type": "string", "label": "险种"},
+                {"key": "consecutive_months", "type": "string", "label": "连续缴纳月数"},
+                {"key": "payment_base", "type": "string", "label": "缴纳基数"},
+            ]},
+            {"name": "完税证明", "code": "tax-payment", "category": "company", "icon": "landmark",
+             "description": "完税/纳税证明（实际缴税记录，区别于纳税信用A级证书）", "metadata_schema": [
+                {"key": "taxpayer", "type": "string", "label": "纳税人"},
+                {"key": "tax_type", "type": "string", "label": "税种"},
+                {"key": "tax_period", "type": "string", "label": "税款所属期"},
+                {"key": "tax_amount", "type": "string", "label": "实缴税额"},
+                {"key": "tax_authority", "type": "string", "label": "主管税务机关"},
+            ]},
+            {"name": "投标保证金", "code": "bid-bond", "category": "bid", "icon": "lock",
+             "description": "投标保证金缴纳证明（资格必查，未交直接废标）", "metadata_schema": [
+                {"key": "bidder_name", "type": "string", "label": "投标人"},
+                {"key": "payee", "type": "string", "label": "收款方(采购代理)"},
+                {"key": "amount", "type": "string", "label": "保证金金额"},
+                {"key": "payment_date", "type": "date", "label": "到账时间"},
+                {"key": "voucher_number", "type": "string", "label": "银行回单号"},
+                {"key": "tender_project", "type": "string", "label": "招标项目"},
+            ]},
+            {"name": "服务网点证明", "code": "service-point-proof", "category": "company", "icon": "map-pin",
+             "description": "本地服务网点证明（租赁合同/营业执照/产权，服务网点评分项）", "metadata_schema": [
+                {"key": "company_name", "type": "string", "label": "投标主体"},
+                {"key": "branch", "type": "string", "label": "网点/分公司"},
+                {"key": "service_address", "type": "string", "label": "网点地址"},
+                {"key": "lease_period", "type": "string", "label": "租赁期限"},
+                {"key": "contact_person", "type": "string", "label": "联系人"},
+                {"key": "contact_phone", "type": "string", "label": "联系电话"},
             ]},
         ]
         existing_codes = {dt.code for dt in session.query(DocType).all()}
