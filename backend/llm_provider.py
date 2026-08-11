@@ -205,7 +205,21 @@ class DeepSeekProvider(LLMProvider):
                 response.raise_for_status()
 
                 result = response.json()
-                content = result["choices"][0]["message"]["content"]
+                choice = result["choices"][0]
+                content = choice["message"]["content"]
+                finish_reason = choice.get("finish_reason", "")
+
+                # Reasoning models (deepseek-v4 etc.) spend max_tokens on hidden
+                # reasoning first; a small budget truncates to empty content
+                # with finish_reason="length". Escalate the budget and retry.
+                if not content and finish_reason == "length" and payload["max_tokens"] < 16000:
+                    new_budget = min(payload["max_tokens"] * 2, 16000)
+                    logger.info(
+                        f"DeepSeek 返回空内容(reasoning 耗尽 {payload['max_tokens']} tokens)，"
+                        f"max_tokens 提升到 {new_budget} 重试..."
+                    )
+                    kwargs["max_tokens"] = new_budget
+                    return self.chat(messages, **kwargs)
 
                 if attempt > 0:
                     logger.info(f"DeepSeek API 重试成功！")

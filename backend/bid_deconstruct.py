@@ -69,7 +69,7 @@ def _llm_detect_boundaries(page_texts: list[str], title: str) -> list[dict]:
         try:
             result = provider.chat(
                 [{"role": "user", "content": prompt}],
-                max_tokens=1200,
+                max_tokens=4000,
                 temperature=0,
             )
             m = re.search(r"\[.*\]", result, re.S)
