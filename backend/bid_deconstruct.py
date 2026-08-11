@@ -22,48 +22,85 @@ from datetime import datetime
 from typing import Optional
 
 
-def _llm_judge_composite(sample_texts: list[str], title: str) -> dict:
-    """Ask LLM whether the sampled images are pages of one document or independent materials.
+# Pages per LLM call when detecting document boundaries across a composite.
+BOUNDARY_BATCH_PAGES = 8
 
-    Returns: {"is_single_document": bool, "reason": str}
+
+def _llm_detect_boundaries(page_texts: list[str], title: str) -> list[dict]:
+    """Detect document boundaries across consecutive scanned pages.
+
+    Single-page materials (营业执照, 身份证, 授权书) must stay single;
+    multi-page materials (审计报告, 合同, 财务报表附注) must stay merged.
+    Returns [{"start": int(0-based), "doc_type": str, "doc_title": str}, ...] —
+    each entry marks the first page of a new document; its pages run until the
+    next entry. On total LLM failure returns a single boundary at page 0
+    (keep everything merged — merging is always safer than over-splitting).
     """
+    import re
     from llm_provider import get_llm_provider
 
-    # Truncate each sample to keep prompt short
-    excerpts = []
-    for i, text in enumerate(sample_texts, 1):
-        excerpts.append(f"--- 图{i} OCR摘录 ---\n{text[:500]}")
-    combined_excerpts = "\n\n".join(excerpts)
-
-    prompt = f"""判断以下来自投标文件"{title}"章节的多张图片扫描件，是【同一份文档的多个页面】，还是【多份独立的证件/证明材料】。
-
-{combined_excerpts}
+    provider = get_llm_provider()
+    n = len(page_texts)
+    boundaries = []
+    prev_doc_type = ""
+    i = 0
+    while i < n:
+        batch = page_texts[i:i + BOUNDARY_BATCH_PAGES]
+        excerpts = []
+        for j, text in enumerate(batch):
+            excerpts.append(f"--- 第{i + j + 1}页 ---\n{(text or '')[:300] or '(无文本)'}")
+        combined_excerpts = "\n\n".join(excerpts)
+        ctx = (
+            f"上一批最后一页属于「{prev_doc_type}」，本批第{i + 1}页可能是它的续页。"
+            if prev_doc_type else "第1页是整个扫描件的第一页。"
+        )
+        prompt = f"""以下来自投标文件"{title}"的连续扫描页 OCR 摘录。{ctx}
+请判断本批每一页是【新文档的第一页】还是【前一份文档的续页】。
 
 判断依据：
-- 如果是同一份文档的多页（如审计报告第1-30页、合同正文的连续页），返回 is_single_document=true
-- 如果是多份独立的证件或证明（如不同人的社保证明、多张不同的资格证书），返回 is_single_document=false
+- 营业执照、身份证、授权书、承诺书、缴纳凭证等通常只有 1 页
+- 审计报告、财务报表附注、合同等是连续多页的同一份文档（页码/页眉连续，如"第12页"）
+- 出现新的封面或标题（如"2024年度审计报告"）= 新文档开始
 
-只返回JSON，不要解释：
-{{"is_single_document": true/false, "reason": "一句话理由"}}"""
+只返回JSON数组，本批每页一项，不要解释：
+[{{"page": 页码整数, "is_new_doc": true/false, "doc_type": "材料类型", "doc_title": "该页所属文档标题"}}]"""
 
-    try:
-        provider = get_llm_provider()
-        result = provider.chat(
-            [{"role": "user", "content": prompt}],
-            max_tokens=100,
-            temperature=0,
-        )
-        import re
-        m = re.search(r'\{[^}]+\}', result)
-        if m:
-            return json.loads(m.group())
-    except Exception as e:
-        logger.warning("LLM composite judge failed: %s", e)
+        items = []
+        try:
+            result = provider.chat(
+                [{"role": "user", "content": prompt}],
+                max_tokens=1200,
+                temperature=0,
+            )
+            m = re.search(r"\[.*\]", result, re.S)
+            if m:
+                items = json.loads(m.group())
+        except Exception as e:
+            logger.warning("Boundary detection failed for pages %d-%d: %s",
+                           i + 1, i + len(batch), e)
 
-    # Default: assume single document (safe — don't split)
-    return {"is_single_document": True, "reason": "LLM判断失败，默认保持合并"}
+        for j in range(len(batch)):
+            page_no = i + j + 1
+            item = next(
+                (x for x in items if isinstance(x, dict) and x.get("page") == page_no),
+                None,
+            )
+            if item:
+                if item.get("is_new_doc"):
+                    boundaries.append({
+                        "start": page_no - 1,
+                        "doc_type": item.get("doc_type", "") or "",
+                        "doc_title": item.get("doc_title", "") or "",
+                    })
+                if item.get("doc_type"):
+                    prev_doc_type = item["doc_type"]
+        i += len(batch)
 
-from extractor import extract_materials, ExtractedMaterial, COMPOSITE_OCR_SAMPLE_PAGES
+    if not boundaries or boundaries[0]["start"] != 0:
+        boundaries.insert(0, {"start": 0, "doc_type": "", "doc_title": ""})
+    return boundaries
+
+from extractor import extract_materials, ExtractedMaterial
 
 logger = logging.getLogger("materialhub.bid_deconstruct")
 
@@ -284,116 +321,170 @@ def _process_child(child_doc_id: int) -> None:
                 _classify_and_link(child_doc_id, combined[:4000], doc_title)
 
         elif nature == "composite":
-            # OCR leading pages, then LLM decides: one document or independent?
-            sample_texts = []
-            for storage_path, filename in file_paths[:COMPOSITE_OCR_SAMPLE_PAGES]:
-                full_path = os.path.join(os.getenv("DATA_DIR", "data"), storage_path)
-                if os.path.exists(full_path):
-                    with open(full_path, "rb") as fh:
-                        ocr_text = ocr_image_bytes(fh.read(), label=filename)
-                    if ocr_text:
-                        sample_texts.append(ocr_text)
-
-            if not sample_texts:
-                logger.warning("Composite doc %d: no OCR text from samples", child_doc_id)
-            else:
-                judgment = _llm_judge_composite(sample_texts, doc_title)
-                logger.info("Composite doc %d LLM judgment: %s", child_doc_id, judgment)
-
-                if judgment.get("is_single_document", True):
-                    combined = "\n\n".join(sample_texts)
-                    _classify_and_link(child_doc_id, combined[:3000], doc_title, light=True)
-                else:
-                    logger.info("Composite doc %d: splitting into independent materials", child_doc_id)
-                    _split_composite_to_atomic(child_doc_id, file_paths, doc_title)
+            # OCR all pages + LLM boundary detection: single-page materials
+            # stay single, multi-page documents stay merged.
+            _split_composite_by_boundaries(child_doc_id, file_paths, doc_title)
 
         _update_processing(child_doc_id, "completed")
         with get_dms_session() as session:
             d = session.query(DmsDocument).filter(DmsDocument.id == child_doc_id).first()
             if d and d.status == "draft":
                 d.status = "active"
+        _index_child(child_doc_id)
 
     except Exception as e:
         logger.warning("Child %d processing error: %s", child_doc_id, e)
         _update_processing(child_doc_id, "failed", error=str(e))
 
 
-def _split_composite_to_atomic(parent_doc_id: int, file_paths: list, doc_title: str) -> None:
-    """Split a composite doc (misjudged as one doc but actually independent materials).
+def _split_composite_by_boundaries(child_doc_id: int, file_paths: list, doc_title: str) -> None:
+    """Segment a composite's pages into whole documents via LLM boundary detection.
 
-    Each image becomes its own atomic child doc with full OCR + classification.
-    The original composite doc is marked as 'archived' (kept as record, not deleted).
+    Single-page materials (licenses, ID cards) become single-page child docs;
+    multi-page documents (audit reports, contracts) become composite child docs
+    carrying all their pages. If detection finds the whole composite is one
+    document, it is classified as-is and kept. Otherwise the original composite
+    is archived (kept as record, not deleted) after its groups are created.
     """
-    from dms_models import get_dms_session, DmsDocument, Revision, DmsFile
     from ocr_client import ocr_image_bytes
 
-    split_ids = []
+    # OCR every page (content-cached, so re-runs are cheap)
+    page_texts = []
     for storage_path, filename in file_paths:
+        full_path = os.path.join(os.getenv("DATA_DIR", "data"), storage_path)
+        text = ""
+        if os.path.exists(full_path):
+            try:
+                with open(full_path, "rb") as fh:
+                    text = ocr_image_bytes(fh.read(), label=filename) or ""
+            except Exception as e:
+                logger.warning("OCR failed for %s of composite %d: %s", filename, child_doc_id, e)
+        page_texts.append(text)
+
+    if not any(page_texts):
+        logger.warning("Composite doc %d: no OCR text on any page", child_doc_id)
+        return
+
+    boundaries = _llm_detect_boundaries(page_texts, doc_title)
+    logger.info("Composite doc %d: %d document boundaries: %s",
+                child_doc_id, len(boundaries), boundaries)
+
+    n = len(file_paths)
+    groups = []
+    for k, b in enumerate(boundaries):
+        end = boundaries[k + 1]["start"] if k + 1 < len(boundaries) else n
+        if b["start"] < end:
+            groups.append((b["start"], end, b.get("doc_type") or "", b.get("doc_title") or ""))
+
+    # One group covering all pages → the composite IS one document, keep it
+    if len(groups) <= 1:
+        combined = "\n\n".join(t for t in page_texts if t)
+        _classify_and_link(child_doc_id, combined[:4000], doc_title, light=True)
+        return
+
+    split_ids = []
+    for start, end, doc_type, group_title in groups:
         try:
-            full_path = os.path.join(os.getenv("DATA_DIR", "data"), storage_path)
-            if not os.path.exists(full_path):
-                continue
-            # OCR this image
-            with open(full_path, "rb") as fh:
-                ocr_text = ocr_image_bytes(fh.read(), label=filename)
-            if not ocr_text:
-                continue
-
-            # Create a new atomic doc for this image
-            meta = {
-                "_bid_parent": {"parent_doc_id": parent_doc_id, "source_title": doc_title},
-                "_material_nature": "atomic",
-                "_split_from_composite": parent_doc_id,
-                "_processing": {"status": "split"},
-            }
-            with get_dms_session() as session:
-                child = DmsDocument(
-                    title=f"{doc_title} - {filename}",
-                    status="draft",
-                    meta_json=json.dumps(meta, ensure_ascii=False),
-                )
-                session.add(child)
-                session.flush()
-                # Capture the id now — after commit the instance is expired and
-                # accessing child.id outside the session raises DetachedInstanceError
-                child_id = child.id
-
-                rev = Revision(document_id=child_id, version_number=1, is_current=True)
-                session.add(rev)
-                session.flush()
-
-                dms_file = DmsFile(
-                    revision_id=rev.id,
-                    file_type="original",
-                    filename=filename,
-                    storage_path=storage_path,
-                    mime_type="image/png",
-                    file_size=os.path.getsize(full_path),
-                )
-                session.add(dms_file)
-                session.commit()
-                split_ids.append(child_id)
-
-            # Classify the split child
-            _classify_and_link(child_id, ocr_text[:4000], doc_title)
-            with get_dms_session() as session:
-                d = session.query(DmsDocument).filter(DmsDocument.id == child_id).first()
-                if d and d.status == "draft":
-                    d.status = "active"
-
+            gid = _create_group_document(
+                child_doc_id, doc_title, group_title or doc_type,
+                file_paths[start:end], page_texts[start:end],
+            )
+            if gid:
+                split_ids.append(gid)
         except Exception as e:
-            logger.warning("Failed to split image %s from composite %d: %s", filename, parent_doc_id, e)
+            logger.warning("Failed to create group doc for pages %d-%d of composite %d: %s",
+                           start + 1, end, child_doc_id, e)
 
     # Archive the original composite (keep as record)
     if split_ids:
+        from dms_models import get_dms_session, DmsDocument
         with get_dms_session() as session:
-            parent = session.query(DmsDocument).filter(DmsDocument.id == parent_doc_id).first()
+            parent = session.query(DmsDocument).filter(DmsDocument.id == child_doc_id).first()
             if parent:
                 parent.status = "archived"
                 meta = json.loads(parent.meta_json) if isinstance(parent.meta_json, str) else (parent.meta_json or {})
                 meta["_split_into"] = split_ids
                 parent.meta_json = json.dumps(meta, ensure_ascii=False)
-        logger.info("Composite doc %d split into %d atomic docs: %s", parent_doc_id, len(split_ids), split_ids)
+        logger.info("Composite doc %d split into %d documents: %s",
+                    child_doc_id, len(split_ids), split_ids)
+
+
+def _create_group_document(
+    parent_doc_id: int, parent_title: str, group_title: str,
+    group_files: list, group_texts: list,
+) -> Optional[int]:
+    """Create one child doc for a detected document (1+ consecutive pages).
+
+    Files are referenced in place (same storage_path as the parent composite's
+    revision files) — no bytes are copied.
+    """
+    from dms_models import get_dms_session, DmsDocument, Revision, DmsFile
+
+    if not group_files:
+        return None
+
+    is_single = len(group_files) == 1
+    title = f"{parent_title} - {group_title}" if group_title else parent_title
+    meta = {
+        "_bid_parent": {"parent_doc_id": parent_doc_id, "source_title": parent_title},
+        "_material_nature": "atomic" if is_single else "composite",
+        "_split_from_composite": parent_doc_id,
+        "_processing": {"status": "split"},
+    }
+    with get_dms_session() as session:
+        child = DmsDocument(
+            title=title,
+            status="draft",
+            meta_json=json.dumps(meta, ensure_ascii=False),
+        )
+        session.add(child)
+        session.flush()
+        child_id = child.id
+
+        rev = Revision(document_id=child_id, version_number=1, is_current=True)
+        session.add(rev)
+        session.flush()
+
+        data_dir = os.getenv("DATA_DIR", "data")
+        for storage_path, filename in group_files:
+            full_path = os.path.join(data_dir, storage_path)
+            if not os.path.exists(full_path):
+                continue
+            ext = os.path.splitext(filename)[1].lstrip(".").lower() or "png"
+            dms_file = DmsFile(
+                revision_id=rev.id,
+                file_type="original",
+                filename=filename,
+                storage_path=storage_path,
+                mime_type="image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}",
+                file_size=os.path.getsize(full_path),
+            )
+            session.add(dms_file)
+        session.commit()
+
+    combined = "\n\n".join(t for t in group_texts if t)
+    if combined:
+        _classify_and_link(child_id, combined[:4000], title)
+    with get_dms_session() as session:
+        d = session.query(DmsDocument).filter(DmsDocument.id == child_id).first()
+        if d and d.status == "draft":
+            d.status = "active"
+    _index_child(child_id)
+    return child_id
+
+
+def _index_child(doc_id: int) -> None:
+    """FTS + KB indexing for a child doc (failures are non-fatal)."""
+    try:
+        from dms_search import index_document
+        index_document(doc_id)
+    except Exception as e:
+        logger.warning("FTS indexing failed for child %d: %s", doc_id, e)
+    try:
+        from kb_ingest import ingest_document_chunks
+        ingest_document_chunks(doc_id)
+    except Exception as e:
+        logger.warning("KB indexing failed for child %d: %s", doc_id, e)
 
 
 def _classify_and_link(
@@ -413,6 +504,34 @@ def _classify_and_link(
     result = intelligent_extract(text, material_title=title)
     material_type = result.get("material_type", "")
     extracted_data = result.get("extracted_data", {})
+
+    # Persist classification + searchable text into meta_json — FTS reads
+    # summary/extracted_data, KB chunks read _analysis.combined_text
+    from dms_models import get_dms_session, DmsDocument
+    with get_dms_session() as session:
+        d = session.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
+        if d:
+            meta = json.loads(d.meta_json) if isinstance(d.meta_json, str) else (d.meta_json or {})
+            if not isinstance(meta, dict):
+                meta = {}
+            if material_type:
+                meta["material_type"] = material_type
+            if extracted_data:
+                meta["extracted_data"] = extracted_data
+            if result.get("summary"):
+                meta["summary"] = result["summary"]
+            if result.get("confidence") is not None:
+                meta["confidence"] = result["confidence"]
+            if text:
+                analysis = meta.get("_analysis") or {}
+                if isinstance(analysis, str):
+                    try:
+                        analysis = json.loads(analysis)
+                    except (json.JSONDecodeError, TypeError):
+                        analysis = {}
+                analysis["combined_text"] = f"{d.title}\n\n{text}" if d.title else text
+                meta["_analysis"] = analysis
+            d.meta_json = json.dumps(meta, ensure_ascii=False)
 
     if material_type:
         _auto_assign_doc_type(doc_id, material_type)
