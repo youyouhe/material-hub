@@ -469,18 +469,28 @@ def _create_group_document(
         session.flush()
 
         data_dir = os.getenv("DATA_DIR", "data")
+        rev_dir = os.path.join(data_dir, "dms_files", str(child_id), str(rev.id))
+        os.makedirs(rev_dir, exist_ok=True)
         for storage_path, filename in group_files:
-            full_path = os.path.join(data_dir, storage_path)
-            if not os.path.exists(full_path):
+            src = os.path.join(data_dir, storage_path)
+            if not os.path.exists(src):
                 continue
+            # Copy bytes into the child's own directory — children must own
+            # their files, otherwise deleting one child unlinks shared files
+            # out from under its siblings.
+            with open(src, "rb") as fh:
+                data = fh.read()
+            new_storage = f"dms_files/{child_id}/{rev.id}/{filename}"
+            with open(os.path.join(data_dir, new_storage), "wb") as out:
+                out.write(data)
             ext = os.path.splitext(filename)[1].lstrip(".").lower() or "png"
             dms_file = DmsFile(
                 revision_id=rev.id,
                 file_type="original",
                 filename=filename,
-                storage_path=storage_path,
+                storage_path=new_storage,
                 mime_type="image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}",
-                file_size=os.path.getsize(full_path),
+                file_size=len(data),
             )
             session.add(dms_file)
         session.commit()
