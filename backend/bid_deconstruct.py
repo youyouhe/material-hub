@@ -362,16 +362,24 @@ def _split_composite_by_boundaries(child_doc_id: int, file_paths: list, doc_titl
     is archived (kept as record, not deleted) after its groups are created.
     """
     from ocr_client import ocr_image_bytes
+    from ocr_cache import get_cached_ocr, save_ocr_to_cache
 
-    # OCR every page (content-cached, so re-runs are cheap)
+    # OCR every page, content-hash cached: re-runs and repeated deconstructs
+    # cost nothing, and a dead OCR account doesn't lose already-done pages.
     page_texts = []
     for storage_path, filename in file_paths:
         full_path = os.path.join(os.getenv("DATA_DIR", "data"), storage_path)
         text = ""
         if os.path.exists(full_path):
             try:
-                with open(full_path, "rb") as fh:
-                    text = ocr_image_bytes(fh.read(), label=filename) or ""
+                cached = get_cached_ocr(full_path, 0)
+                if cached:
+                    text = cached.get("text", "") or ""
+                else:
+                    with open(full_path, "rb") as fh:
+                        text = ocr_image_bytes(fh.read(), label=filename) or ""
+                    if text:
+                        save_ocr_to_cache(full_path, 0, text)
             except Exception as e:
                 logger.warning("OCR failed for %s of composite %d: %s", filename, child_doc_id, e)
         page_texts.append(text)
