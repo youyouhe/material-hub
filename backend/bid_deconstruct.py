@@ -81,10 +81,18 @@ def _llm_detect_boundaries(page_texts: list[str], title: str) -> list[dict]:
 
         for j in range(len(batch)):
             page_no = i + j + 1
-            item = next(
-                (x for x in items if isinstance(x, dict) and x.get("page") == page_no),
-                None,
-            )
+            item = None
+            # LLMs often return batch-relative page numbers (1..k) despite
+            # being shown absolute ones — accept both, prefer exact match.
+            for x in items:
+                if not isinstance(x, dict):
+                    continue
+                p = x.get("page")
+                if p == page_no:
+                    item = x
+                    break
+                if p == j + 1 or (isinstance(p, str) and p.isdigit() and int(p) == j + 1):
+                    item = x  # relative match; keep scanning for exact
             if item:
                 if item.get("is_new_doc"):
                     boundaries.append({
