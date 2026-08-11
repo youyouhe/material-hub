@@ -116,6 +116,17 @@ def _detect_heading(elem) -> Optional[SectionInfo]:
     if not text:
         return None
 
+    # TOC entries replicate section titles with page numbers appended
+    # (e.g. "一、营业执照1") — never treat them as section headings,
+    # or images before the first real heading get misattributed.
+    # Must be checked before the text-pattern strategies below.
+    _pr = elem.find(qn("w:pPr"))
+    if _pr is not None:
+        _sr = _pr.find(qn("w:pStyle"))
+        if _sr is not None:
+            if _sr.get(qn("w:val"), "").lower().startswith("toc"):
+                return None
+
     # Strategy 1: Chinese major numbering (一、报价部分)
     # Check first because it's most specific
     if len(text) <= 100:

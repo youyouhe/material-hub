@@ -1046,16 +1046,17 @@ def analyze_document(doc_id: int):
                     except Exception as e:
                         logger.warning(f"LLM classification after Word extraction failed for doc {doc_id}: {e}")
 
-                    # Bid deconstruction: if title indicates a bid package, split into children
+                    # Word deconstruction: extract embedded materials (scans,
+                    # certificates, stamps) into child docs. Runs for every
+                    # Word upload — no title keyword gate. extract_materials()
+                    # returns empty for docs without images, making this a no-op.
                     try:
-                        from bid_deconstruct import is_bid_document, deconstruct_bid_doc
-                        if is_bid_document(doc_title):
-                            logger.info(f"Doc {doc_id} detected as bid package, deconstructing...")
-                            decon_result = deconstruct_bid_doc(doc_id)
-                            if decon_result["total"] > 0:
-                                _update_processing(doc_id, "deconstructed",
-                                                  extra_meta={"_bid_deconstruction_summary": decon_result})
-                                logger.info(f"Doc {doc_id} deconstructed: {decon_result['total']} children")
+                        from bid_deconstruct import deconstruct_bid_doc
+                        decon_result = deconstruct_bid_doc(doc_id)
+                        if decon_result["total"] > 0:
+                            _update_processing(doc_id, "deconstructed",
+                                              extra_meta={"_bid_deconstruction_summary": decon_result})
+                            logger.info(f"Doc {doc_id} deconstructed: {decon_result['total']} children")
                     except Exception as e:
                         logger.warning(f"Bid deconstruction failed for doc {doc_id} (non-fatal): {e}")
 
@@ -1546,6 +1547,16 @@ def process_document(doc_id: int):
                                                       "extracted_data": extracted_data})
                 else:
                     logger.warning(f"Word extraction produced no text for doc {doc_id}")
+                # Deconstruct embedded materials into child docs (idempotent —
+                # skips when _bid_deconstruction marker already present)
+                try:
+                    from bid_deconstruct import deconstruct_bid_doc
+                    decon_result = deconstruct_bid_doc(doc_id)
+                    if decon_result["total"] > 0:
+                        logger.info(f"Doc {doc_id} deconstructed on reprocess: "
+                                    f"{decon_result['total']} children")
+                except Exception as e:
+                    logger.warning(f"Bid deconstruction failed for doc {doc_id} (non-fatal): {e}")
             except Exception as e:
                 logger.warning(f"Word extraction pipeline failed for doc {doc_id}: {e}")
             # Fall through to FTS + KB indexing below

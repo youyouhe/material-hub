@@ -67,23 +67,14 @@ from extractor import extract_materials, ExtractedMaterial, COMPOSITE_OCR_SAMPLE
 
 logger = logging.getLogger("materialhub.bid_deconstruct")
 
-# Title keywords that indicate a document is a bid (投标书) worth deconstructing.
-# Used by the trigger detection in dms_processor.
-BID_TITLE_KEYWORDS = ("投标", "磋商", "响应文件", "招标", "标书", "应答文件")
-
-
-def is_bid_document(title: str) -> bool:
-    """Heuristic: does this document title look like a bid package?"""
-    if not title:
-        return False
-    return any(kw in title for kw in BID_TITLE_KEYWORDS)
-
-
 def deconstruct_bid_doc(parent_doc_id: int) -> dict:
-    """Deconstruct a bid Word document into child material documents.
+    """Deconstruct a Word document into child material documents.
+
+    Runs for any Word upload — no title heuristic. Documents without
+    embedded materials extract to nothing and are left untouched.
 
     Args:
-        parent_doc_id: the DmsDocument id of the uploaded bid Word file.
+        parent_doc_id: the DmsDocument id of the uploaded Word file.
 
     Returns:
         {"total": N, "child_doc_ids": [...], "atomic": a, "composite": c, "text": t}
@@ -100,6 +91,18 @@ def deconstruct_bid_doc(parent_doc_id: int) -> dict:
         if not parent:
             raise ValueError(f"Parent doc {parent_doc_id} not found")
         parent_title = parent.title
+        # Idempotency: already deconstructed → return the recorded summary
+        existing_meta = json.loads(parent.meta_json) if isinstance(parent.meta_json, str) else (parent.meta_json or {})
+        if isinstance(existing_meta, dict):
+            prev = existing_meta.get("_bid_deconstruction")
+            if prev:
+                logger.info("Doc %d already deconstructed (%d children), skipping",
+                            parent_doc_id, prev.get("total_extracted", 0))
+                return {
+                    "total": prev.get("total_extracted", 0),
+                    "child_doc_ids": prev.get("child_doc_ids", []),
+                    **prev.get("counts", {}),
+                }
         cur_rev = parent.current_revision()
         if not cur_rev or not cur_rev.files:
             raise ValueError(f"Parent doc {parent_doc_id} has no file")
@@ -351,8 +354,11 @@ def _split_composite_to_atomic(parent_doc_id: int, file_paths: list, doc_title: 
                 )
                 session.add(child)
                 session.flush()
+                # Capture the id now — after commit the instance is expired and
+                # accessing child.id outside the session raises DetachedInstanceError
+                child_id = child.id
 
-                rev = Revision(document_id=child.id, version_number=1, is_current=True)
+                rev = Revision(document_id=child_id, version_number=1, is_current=True)
                 session.add(rev)
                 session.flush()
 
@@ -366,12 +372,12 @@ def _split_composite_to_atomic(parent_doc_id: int, file_paths: list, doc_title: 
                 )
                 session.add(dms_file)
                 session.commit()
-                split_ids.append(child.id)
+                split_ids.append(child_id)
 
             # Classify the split child
-            _classify_and_link(child.id, ocr_text[:4000], doc_title)
+            _classify_and_link(child_id, ocr_text[:4000], doc_title)
             with get_dms_session() as session:
-                d = session.query(DmsDocument).filter(DmsDocument.id == child.id).first()
+                d = session.query(DmsDocument).filter(DmsDocument.id == child_id).first()
                 if d and d.status == "draft":
                     d.status = "active"
 
