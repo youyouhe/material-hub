@@ -66,18 +66,25 @@ def _llm_detect_boundaries(page_texts: list[str], title: str) -> list[dict]:
 [{{"page": 页码整数, "is_new_doc": true/false, "doc_type": "材料类型", "doc_title": "该页所属文档标题"}}]"""
 
         items = []
-        try:
-            result = provider.chat(
-                [{"role": "user", "content": prompt}],
-                max_tokens=4000,
-                temperature=0,
-            )
-            m = re.search(r"\[.*\]", result, re.S)
-            if m:
-                items = json.loads(m.group())
-        except Exception as e:
-            logger.warning("Boundary detection failed for pages %d-%d: %s",
-                           i + 1, i + len(batch), e)
+        # Up to 3 attempts per batch — an empty/timed-out response must not
+        # silently turn the whole batch into "continuation" pages.
+        for _attempt in range(3):
+            try:
+                result = provider.chat(
+                    [{"role": "user", "content": prompt}],
+                    max_tokens=4000,
+                    temperature=0,
+                )
+                m = re.search(r"\[.*\]", result or "", re.S)
+                if m:
+                    items = json.loads(m.group())
+                if items:
+                    break
+                logger.warning("Boundary detection empty/unparsable for pages %d-%d (attempt %d)",
+                               i + 1, i + len(batch), _attempt + 1)
+            except Exception as e:
+                logger.warning("Boundary detection failed for pages %d-%d (attempt %d): %s",
+                               i + 1, i + len(batch), _attempt + 1, e)
 
         for j in range(len(batch)):
             page_no = i + j + 1
