@@ -1602,6 +1602,26 @@ def process_document(doc_id: int):
         else:
             _update_processing(doc_id, "ocr_running")
             ocr_text = _run_ocr(doc_id, file_info)
+            if ocr_text:
+                # Persist OCR text — KB chunking and FTS read
+                # meta._analysis.combined_text; without this image docs
+                # are invisible to the knowledge base.
+                from dms_models import get_dms_session, DmsDocument
+                import json as _json3
+                with get_dms_session() as db3:
+                    doc3 = db3.query(DmsDocument).filter(DmsDocument.id == doc_id).first()
+                    if doc3:
+                        meta3 = doc3.meta_json if isinstance(doc3.meta_json, dict) else (_json3.loads(doc3.meta_json or "{}"))
+                        am = meta3.get("_analysis", {}) or {}
+                        if isinstance(am, str):
+                            try:
+                                am = _json3.loads(am)
+                            except (ValueError, TypeError):
+                                am = {}
+                        am["combined_text"] = f"{doc3.title}\n\n{ocr_text}"
+                        meta3["_analysis"] = am
+                        doc3.meta_json = _json3.dumps(meta3, ensure_ascii=False)
+                        db3.commit()
 
         if not ocr_text:
             logger.warning(f"Text extraction returned no text for doc {doc_id}")
