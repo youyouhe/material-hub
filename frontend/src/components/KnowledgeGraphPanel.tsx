@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Network, DataSet } from 'vis-network/standalone';
 import { RefreshCw, X, Maximize2, Minimize2 } from 'lucide-react';
 import { kbGetEntityGraph, kbGetBatchRelations } from '../services/api-v2';
+import { sanitizeHtml } from '../utils/sanitize';
 import type { KbGraphResponse } from '../types/dms';
 
 interface EntityItem {
@@ -440,7 +441,7 @@ export default function KnowledgeGraphPanel({ entityName, entities, onClose, com
       {/* Selected info */}
       {selectedInfo && (
         <div className="px-3 py-1.5 bg-cp-purple/10 border-b border-cp-purple/20 text-xs text-cp-purple-light truncate"
-             dangerouslySetInnerHTML={{ __html: selectedInfo }} />
+             dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedInfo) }} />
       )}
 
       {/* Content */}

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { searchDocuments } from '../services/api-v2';
 import type { SearchResult } from '../types/dms';
 import { docStatusBadge, fallbackBadge } from '../utils/badge';
+import { sanitizeHtml } from '../utils/sanitize';
 import DocumentDetailPanel from '../components/DocumentDetailPanel';
 
 interface SearchPageProps {
@@ -111,7 +112,7 @@ export default function SearchPage({ userRole = 'viewer' }: SearchPageProps) {
                 {r.snippet && (
                   <p
                     className="text-sm text-cp-muted mt-1 line-clamp-2"
-                    dangerouslySetInnerHTML={{ __html: r.snippet }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(r.snippet) }}
                   />
                 )}
                 <div className="flex items-center gap-3 mt-2 text-xs text-cp-dim">
