@@ -1670,6 +1670,21 @@ def process_document(doc_id: int):
         except Exception as e:
             logger.warning(f"FTS indexing failed for doc {doc_id}: {e}")
 
+        # Step 11: KB chunking + embedding (non-blocking, failure does not fail the doc)
+        try:
+            from kb_ingest import ingest_document_chunks
+            ok = ingest_document_chunks(doc_id)
+            if ok:
+                import threading
+                t = threading.Thread(
+                    target=_async_event_extraction,
+                    args=(doc_id,),
+                    daemon=True,
+                )
+                t.start()
+        except Exception as e:
+            logger.warning(f"KB indexing failed for doc {doc_id}: {e}")
+
         # Done
         _update_processing(doc_id, "completed")
         logger.info(f"Processing complete for doc {doc_id}: type={material_type}, confidence={confidence}")
