@@ -18,6 +18,38 @@ OCR_TIMEOUT = int(os.getenv("OCR_TIMEOUT", "120"))
 
 BIGMODEL_API_URL = "https://open.bigmodel.cn/api/paas/v4/files/ocr"
 
+# BigModel 对上传图片有尺寸/体积限制(超限报 400「上传图片大小错误」),
+# 上传前统一收缩到长边 3800、8MB 以内
+BIGMODEL_MAX_DIM = 3800
+BIGMODEL_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _shrink_image_bytes(image_bytes: bytes, max_dim: int = BIGMODEL_MAX_DIM,
+                        max_bytes: int = BIGMODEL_MAX_BYTES) -> bytes:
+    """收缩图片到指定尺寸/体积内(保持比例,输出 JPEG)。已在限制内则尝试仅压体积。"""
+    from PIL import Image, ImageOps
+    import io
+    Image.MAX_IMAGE_PIXELS = 500_000_000  # 允许打开超大扫描件(默认 8900 万会告警)
+    img = Image.open(io.BytesIO(image_bytes))
+    img = ImageOps.exif_transpose(img)
+    w, h = img.size
+    if max(w, h) > max_dim:
+        ratio = max_dim / max(w, h)
+        img = img.resize((max(1, int(w * ratio)), max(1, int(h * ratio))), Image.LANCZOS)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    quality = 90
+    while True:
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=quality)
+        if buf.tell() <= max_bytes or quality <= 40:
+            break
+        quality -= 15
+    out = buf.getvalue()
+    if len(out) != len(image_bytes):
+        logger.info(f"Image shrunk for OCR upload: {w}x{h} {len(image_bytes)}B -> {img.size} {len(out)}B")
+    return out
+
 
 # Thread-local provider override
 _provider_override = threading.local()
@@ -251,29 +283,26 @@ def _ocr_bigmodel(image_path: str, page_number: int = 1, image_bytes: bytes = No
     }
 
     if image_bytes is not None:
-        filename = "page.png"
-        file_tuple = ('file', (filename, image_bytes, 'image/png'))
+        filename = "page.jpg"
+        file_tuple = ('file', (filename, _shrink_image_bytes(image_bytes), 'image/jpeg'))
     else:
-        f = open(image_path, 'rb')
-        file_tuple = ('file', (Path(image_path).name, f))
+        with open(image_path, 'rb') as f:
+            raw = f.read()
+        file_tuple = ('file', (Path(image_path).name, _shrink_image_bytes(raw), 'image/jpeg'))
 
-    try:
-        data = {
-            'tool_type': tool_type,
-            'language_type': language_type,
-            'probability': 'false',
-        }
+    data = {
+        'tool_type': tool_type,
+        'language_type': language_type,
+        'probability': 'false',
+    }
 
-        response = requests.post(
-            BIGMODEL_API_URL,
-            headers=headers,
-            files=[file_tuple],
-            data=data,
-            timeout=OCR_TIMEOUT
-        )
-    finally:
-        if image_bytes is None:
-            f.close()
+    response = requests.post(
+        BIGMODEL_API_URL,
+        headers=headers,
+        files=[file_tuple],
+        data=data,
+        timeout=OCR_TIMEOUT
+    )
 
     if response.status_code == 200:
         result = response.json()
