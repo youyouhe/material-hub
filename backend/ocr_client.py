@@ -317,9 +317,67 @@ def _ocr_bigmodel(image_path: str, page_number: int = 1, image_bytes: bytes = No
         return None
 
 
+# ============================================================
+# 旋转重试（图片方向不正时 OCR 容易返回空，如倒立的扫描件）
+# ============================================================
+
+# 重试角度顺序：180°（倒立）最常见，其次 90°/270°（横躺）
+ROTATION_RETRY_ANGLES = (180, 90, 270)
+
+
+def _rotate_image_bytes(image_bytes: bytes, angle: int) -> Optional[bytes]:
+    """将图片字节旋转指定角度（顺时针），返回新的图片字节。失败返回 None。"""
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(image_bytes))
+        fmt = (img.format or "PNG").upper()
+        if fmt == "JPG":
+            fmt = "JPEG"
+        rotated = img.rotate(-angle, expand=True)
+        if fmt == "JPEG" and rotated.mode not in ("RGB", "L"):
+            rotated = rotated.convert("RGB")
+        buf = io.BytesIO()
+        rotated.save(buf, format=fmt)
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning(f"Image rotation ({angle}°) failed: {e}")
+        return None
+
+
+def _ocr_dispatch_bytes(provider: str, image_bytes: bytes, page_number: int, label: str) -> Optional[str]:
+    """按提供者分发内存图片 OCR。"""
+    if provider == "paddleocr":
+        return _ocr_paddleocr_bytes(image_bytes, label)
+    elif provider == "bigmodel":
+        return _ocr_bigmodel("", page_number, image_bytes=image_bytes)
+    else:
+        return _ocr_deepseek("", page_number, image_bytes=image_bytes)
+
+
+def _ocr_bytes_with_rotation(provider: str, image_bytes: bytes, page_number: int, label: str) -> Optional[str]:
+    """先按原方向 OCR；若无结果，依次旋转 180°/90°/270° 重试。"""
+    text = _ocr_dispatch_bytes(provider, image_bytes, page_number, label)
+    if text and text.strip():
+        return text
+
+    for angle in ROTATION_RETRY_ANGLES:
+        rotated = _rotate_image_bytes(image_bytes, angle)
+        if rotated is None:
+            break
+        logger.info(f"OCR empty for {label}, retrying after rotating {angle}°")
+        text = _ocr_dispatch_bytes(provider, rotated, page_number, f"{label} (rotated {angle}°)")
+        if text and text.strip():
+            logger.info(f"OCR succeeded for {label} after rotating {angle}°: {len(text)} chars")
+            return text
+
+    logger.warning(f"OCR produced no text for {label} at any rotation")
+    return None
+
+
 def ocr_image(image_path: str, page_number: int = 1) -> Optional[str]:
     """
-    对单个图像进行OCR识别（自动选择提供者）
+    对单个图像进行OCR识别（自动选择提供者，空结果时自动旋转重试）
 
     Args:
         image_path: 图像文件路径
@@ -334,13 +392,9 @@ def ocr_image(image_path: str, page_number: int = 1) -> Optional[str]:
             return None
 
         provider = _get_ocr_provider()
-
-        if provider == "paddleocr":
-            return _ocr_paddleocr(image_path, page_number)
-        elif provider == "bigmodel":
-            return _ocr_bigmodel(image_path, page_number)
-        else:
-            return _ocr_deepseek(image_path, page_number)
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+        return _ocr_bytes_with_rotation(provider, image_bytes, page_number, Path(image_path).name)
 
     except requests.exceptions.Timeout:
         logger.error(f"OCR request timeout for {image_path}")
@@ -354,17 +408,11 @@ def ocr_image_bytes(image_bytes: bytes, page_number: int = 1, label: str = "memo
     """
     对内存中的图像字节数据进行OCR识别（避免临时文件，解决Windows文件锁问题）
 
-    所有提供者都支持直接内存输入。
+    所有提供者都支持直接内存输入。空结果时自动旋转重试。
     """
     try:
         provider = _get_ocr_provider()
-
-        if provider == "paddleocr":
-            return _ocr_paddleocr_bytes(image_bytes, label)
-        elif provider == "bigmodel":
-            return _ocr_bigmodel("", page_number, image_bytes=image_bytes)
-        else:
-            return _ocr_deepseek("", page_number, image_bytes=image_bytes)
+        return _ocr_bytes_with_rotation(provider, image_bytes, page_number, label)
 
     except Exception as e:
         logger.error(f"OCR bytes error for {label}: {e}")
