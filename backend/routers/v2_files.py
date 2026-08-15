@@ -110,6 +110,67 @@ async def upload_file(
         return dms_file.to_dict()
 
 
+ROTATABLE_MIME_TYPES = {"image/jpeg", "image/png", "image/tiff", "image/webp"}
+
+
+@router.post("/files/{file_id}/rotate", dependencies=[require_role("editor")])
+async def rotate_file(file_id: int, request: Request, angle: int = Query(90)):
+    """顺时针旋转图片文件（就地修改）。用于修正倒立/横躺的扫描件，便于查看和重新 OCR。"""
+    if angle not in (90, 180, 270):
+        raise HTTPException(status_code=400, detail="angle 只支持 90/180/270")
+
+    with get_dms_session() as session:
+        dms_file = session.query(DmsFile).filter(DmsFile.id == file_id).first()
+        if not dms_file:
+            raise HTTPException(status_code=404, detail="File not found")
+        if dms_file.mime_type not in ROTATABLE_MIME_TYPES:
+            raise HTTPException(status_code=400, detail="仅支持图片文件旋转")
+
+        file_path = DATA_DIR / dms_file.storage_path
+        # Path traversal protection
+        try:
+            file_path.resolve().relative_to(DATA_DIR.resolve())
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Physical file not found on disk")
+
+        try:
+            from PIL import Image, ImageOps
+            with Image.open(file_path) as img:
+                fmt = (img.format or "PNG").upper()
+                if fmt == "JPG":
+                    fmt = "JPEG"
+                # 先按 EXIF 方向归一化，避免旋转后查看器按 EXIF 二次旋转
+                img = ImageOps.exif_transpose(img)
+                rotated = img.rotate(-angle, expand=True)
+                if fmt == "JPEG" and rotated.mode not in ("RGB", "L"):
+                    rotated = rotated.convert("RGB")
+                rotated.save(file_path, format=fmt)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Rotate failed for file {file_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"旋转失败: {e}")
+
+        # 旋转改变了文件内容，更新大小与哈希
+        content = file_path.read_bytes()
+        dms_file.file_size = len(content)
+        dms_file.file_hash = hashlib.md5(content).hexdigest()
+
+        uid = getattr(request.state, "user_id", None)
+        rev = session.query(Revision).filter(Revision.id == dms_file.revision_id).first()
+        if rev and uid:
+            doc = session.query(DmsDocument).filter(DmsDocument.id == rev.document_id).first()
+            if doc:
+                log_audit(session, uid, "rotate", "document", doc.id, doc.title,
+                          details={"file_id": file_id, "filename": dms_file.filename, "angle": angle},
+                          ip_address=request.client.host if request.client else None)
+
+        logger.info(f"File {file_id} rotated {angle}° clockwise: {dms_file.filename}")
+        return dms_file.to_dict()
+
+
 @router.get("/files/{file_id}")
 async def serve_file(file_id: int, request: Request, preview: bool = Query(False)):
     """Serve a file by its database ID."""

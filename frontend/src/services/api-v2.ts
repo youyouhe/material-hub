@@ -5,7 +5,7 @@ import type {
   BidProject, BidRequirement, BidTeamMember, BidDocument, ChecklistResponse,
   DocumentSuggestion, AuditLog, AdminUser, ApiAgent, SearchResult, UploadQueueItem,
   ExpirySummary, ExpiringDocument, MigrationStatus, PaginatedResponse,
-  SystemSettings, ProcessingStatus,
+  SystemSettings, ProcessingStatus, DmsFile,
 } from '../types/dms';
 
 const BASE = '/api/v2';
@@ -760,9 +760,16 @@ export async function reprocessDocuments(docIds: number[], force: boolean): Prom
 }
 
 // ============================================================
-// Chat
+// Files
 // ============================================================
 
+export async function rotateFile(fileId: number, angle: 90 | 180 | 270 = 90): Promise<DmsFile> {
+  return request(`${BASE}/files/${fileId}/rotate?angle=${angle}`, { method: 'POST' });
+}
+
+// ============================================================
+// Chat
+// ============================================================
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
