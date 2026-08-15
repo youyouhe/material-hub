@@ -210,12 +210,13 @@ class DeepSeekProvider(LLMProvider):
                 finish_reason = choice.get("finish_reason", "")
 
                 # Reasoning models (deepseek-v4 etc.) spend max_tokens on hidden
-                # reasoning first; a small budget truncates to empty content
-                # with finish_reason="length". Escalate the budget and retry.
-                if not content and finish_reason == "length" and payload["max_tokens"] < 16000:
+                # reasoning first; a small budget truncates output (finish_reason=
+                # "length") — empty content or, worse, a truncated JSON fragment.
+                # Escalate the budget and retry.
+                if finish_reason == "length" and payload["max_tokens"] < 16000:
                     new_budget = min(payload["max_tokens"] * 2, 16000)
                     logger.info(
-                        f"DeepSeek 返回空内容(reasoning 耗尽 {payload['max_tokens']} tokens)，"
+                        f"DeepSeek 输出被截断(预算 {payload['max_tokens']} tokens 不足)，"
                         f"max_tokens 提升到 {new_budget} 重试..."
                     )
                     kwargs["max_tokens"] = new_budget
