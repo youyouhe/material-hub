@@ -34,6 +34,35 @@ ALLOWED_MIME_TYPES = {
 }
 SAFE_INLINE_MIME = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
+# 预览降采样:超大图片(如上亿像素的扫描件)直接返回原图会超出浏览器解码上限,
+# 表现为一直加载/只渲染一条。预览时降到长边 2048 的 JPEG,按文件哈希缓存。
+PREVIEW_MAX_DIM = 2048
+PREVIEW_CACHE_DIR = DMS_FILES_DIR / "_preview_cache"
+
+
+def _get_preview_rendition(file_id: int, file_path: Path, file_hash: str) -> Path:
+    """返回用于预览的图片路径。超大图生成(或复用)降采样缓存,否则返回原图。"""
+    try:
+        from PIL import Image, ImageOps
+        Image.MAX_IMAGE_PIXELS = 500_000_000  # 入库文件可信,放宽到 5 亿像素
+        with Image.open(file_path) as im:
+            w, h = im.size
+        if max(w, h) <= PREVIEW_MAX_DIM:
+            return file_path
+
+        PREVIEW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path = PREVIEW_CACHE_DIR / f"{file_id}_{(file_hash or 'nohash')[:16]}.jpg"
+        if not cache_path.exists():
+            with Image.open(file_path) as im:
+                im = ImageOps.exif_transpose(im)
+                im.thumbnail((PREVIEW_MAX_DIM, PREVIEW_MAX_DIM))
+                im.convert("RGB").save(cache_path, "JPEG", quality=85)
+            logger.info(f"Preview rendition generated for file {file_id}: {w}x{h} -> {im.size}")
+        return cache_path
+    except Exception as e:
+        logger.warning(f"Preview downscale failed for file {file_id}, serving original: {e}")
+        return file_path
+
 
 def _sanitize_upload_filename(raw: str) -> str:
     """Strip path components, null bytes, and traversal segments from an uploaded filename."""
@@ -208,9 +237,11 @@ async def serve_file(file_id: int, request: Request, preview: bool = Query(False
 
         if preview and dms_file.mime_type in SAFE_INLINE_MIME:
             # Inline display only for known-safe image MIME types
+            serve_path = _get_preview_rendition(file_id, file_path, dms_file.file_hash)
+            media_type = "image/jpeg" if serve_path != file_path else dms_file.mime_type
             resp = FileResponse(
-                str(file_path),
-                media_type=dms_file.mime_type,
+                str(serve_path),
+                media_type=media_type,
             )
             resp.headers["Content-Disposition"] = "inline"
             resp.headers["X-Content-Type-Options"] = "nosniff"
