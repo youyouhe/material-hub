@@ -214,6 +214,8 @@ async def serve_file(file_id: int, request: Request, preview: bool = Query(False
             )
             resp.headers["Content-Disposition"] = "inline"
             resp.headers["X-Content-Type-Options"] = "nosniff"
+            # 文件可能被旋转等操作就地修改，禁用启发式缓存，强制每次回源校验
+            resp.headers["Cache-Control"] = "no-cache"
             return resp
 
         # Non-image preview, or default download: force download, never render in-browser
