@@ -701,6 +701,30 @@ def _link_entities(doc_id: int, material_type: str, extracted_data: dict):
                 session.add(entity)
                 session.flush()
                 logger.info(f"Created entity: {dms_entity_type} '{entity_name}' (id={entity.id})")
+            else:
+                # Merge fresh extraction into the existing profile. Previously
+                # attributes were written only at creation ("first write wins"),
+                # so stale or mock-polluted values could never be corrected by
+                # a real document. Now non-empty extracted values update the
+                # profile; empty values never overwrite, and "_"-prefixed keys
+                # are reserved for internal bookkeeping (e.g. mock baseline).
+                new_attrs = {
+                    k: v for k, v in entity_data.items()
+                    if k != "name" and v and not k.startswith("_")
+                }
+                if new_attrs:
+                    try:
+                        attrs = json.loads(entity.attributes) if entity.attributes else {}
+                    except (json.JSONDecodeError, TypeError):
+                        attrs = {}
+                    changed = {k: v for k, v in new_attrs.items() if attrs.get(k) != v}
+                    if changed:
+                        attrs.update(changed)
+                        entity.attributes = json.dumps(attrs, ensure_ascii=False)
+                        logger.info(
+                            f"Updated entity '{entity_name}' (id={entity.id}) "
+                            f"attributes from doc {doc_id}: {sorted(changed)}"
+                        )
 
             # Link if not already linked
             existing = session.query(DocumentEntity).filter(

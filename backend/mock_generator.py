@@ -1231,10 +1231,12 @@ _ENTITY_BASELINE_KEYS = (
 def _persist_entity_baseline(entity_name: str, mock_data: dict, doc_type_code: str) -> None:
     """Write this call's finalized baseline fields into dms_entities.attributes.
 
-    Best-effort: creates the org Entity if it doesn't exist yet, merges new
-    keys into existing attributes (never overwrites a key that's already set,
-    so the first generation's values win and stay stable across all later
-    calls — including ones made after mock documents were cleaned up).
+    The baseline lives under the reserved ``_mock_baseline`` key, so fabricated
+    values never mix with the real entity profile: top-level attribute keys are
+    written only by real document extraction (dms_processor), and profile
+    readers strip ``_``-prefixed keys. Existing baseline keys are never
+    overwritten, so the first generation's values win and stay stable across
+    all later calls — including ones made after mock documents were cleaned up.
 
     Skipped for personnel doc types: there entity_name is a person's name and
     the baseline holds company attributes, so persisting would wrongly register
@@ -1257,18 +1259,22 @@ def _persist_entity_baseline(entity_name: str, mock_data: dict, doc_type_code: s
                     attrs = json.loads(entity.attributes) if entity.attributes else {}
                 except (json.JSONDecodeError, TypeError):
                     attrs = {}
+                baseline = attrs.get("_mock_baseline")
+                if not isinstance(baseline, dict):
+                    baseline = {}
                 changed = False
                 for k, v in new_attrs.items():
-                    if not attrs.get(k):
-                        attrs[k] = v
+                    if not baseline.get(k):
+                        baseline[k] = v
                         changed = True
                 if changed:
+                    attrs["_mock_baseline"] = baseline
                     entity.attributes = json.dumps(attrs, ensure_ascii=False)
             else:
                 entity = Entity(
                     entity_type="org",
                     name=entity_name,
-                    attributes=json.dumps(new_attrs, ensure_ascii=False),
+                    attributes=json.dumps({"_mock_baseline": new_attrs}, ensure_ascii=False),
                 )
                 session.add(entity)
     except Exception as e:
@@ -1382,6 +1388,9 @@ def generate_mock(
             # loses the baseline the moment old mock docs get deleted — this was the
             # root cause of "entity baseline drifts to a new random person every time
             # old mock docs are cleared" reported in GAPS_ROUND3).
+            # Fabricated values live under attrs["_mock_baseline"]; real profile
+            # values (top-level keys, written by real document extraction) always
+            # win when present.
             org_entity = session.query(Entity).filter(
                 Entity.entity_type == "org", Entity.name == entity_name,
             ).first()
@@ -1390,14 +1399,20 @@ def generate_mock(
                     attrs = json.loads(org_entity.attributes)
                 except (json.JSONDecodeError, TypeError):
                     attrs = {}
+                mock_baseline = attrs.get("_mock_baseline")
+                if not isinstance(mock_baseline, dict):
+                    mock_baseline = {}
                 for k in ("unified_social_credit_code", "credit_code",
                            "registered_capital", "address",
                            "establishment_date", "company_type",
                            "business_scope", "legal_person"):
                     if attrs.get(k):
                         _existing_overrides[k] = attrs[k]
-                if attrs.get("legal_person") and not person_name:
-                    person_name = attrs["legal_person"]
+                    elif mock_baseline.get(k):
+                        _existing_overrides[k] = mock_baseline[k]
+                legal_person = attrs.get("legal_person") or mock_baseline.get("legal_person")
+                if legal_person and not person_name:
+                    person_name = legal_person
     # Generate mock data
     mock_data = generate_mock_data(doc_type_code, entity_name, person_name)
 

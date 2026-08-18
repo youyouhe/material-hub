@@ -5,6 +5,7 @@ Keeps kb_entities and kb_entity_relations in sync with the main
 SQLite database. Triggered on entity/folder CRUD operations.
 """
 
+import json
 import logging
 from typing import List, Dict
 
@@ -54,20 +55,32 @@ def sync_entities_to_kb() -> Dict:
                     KbEntity.dms_entity_id == ent_info["id"]
                 ).first()
 
+                # SQLite stores attributes as a JSON string; normalize to dict
+                # so comparisons and the JSON-column assignment behave.
+                new_attrs = ent_info["attributes"]
+                if isinstance(new_attrs, str):
+                    try:
+                        new_attrs = json.loads(new_attrs)
+                    except (json.JSONDecodeError, TypeError):
+                        new_attrs = None
+
                 # Build description text for embedding
                 desc_text = _build_entity_text(ent_info)
 
                 if existing:
-                    # Update if name or type changed
+                    # Update if name, type or attributes changed. (Previously
+                    # attribute-only changes were skipped, leaving the KB
+                    # mirror stale after profile corrections.)
                     needs_update = (
                         existing.name != ent_info["name"]
                         or existing.entity_type != ent_info["entity_type"]
+                        or (existing.attributes or None) != (new_attrs or None)
                     )
                     if needs_update:
                         existing.name = ent_info["name"]
                         existing.entity_type = ent_info["entity_type"]
                         existing.description = desc_text
-                        existing.attributes = ent_info["attributes"]
+                        existing.attributes = new_attrs
                         embedding = embed_text(desc_text)
                         existing.embedding = embedding
                         synced += 1
@@ -82,7 +95,7 @@ def sync_entities_to_kb() -> Dict:
                         entity_type=ent_info["entity_type"],
                         description=desc_text,
                         embedding=embedding,
-                        attributes=ent_info["attributes"],
+                        attributes=new_attrs,
                     )
                     session.add(kb_entity)
                     synced += 1
@@ -100,6 +113,35 @@ def sync_entities_to_kb() -> Dict:
 
     logger.info("Entity sync: %d synced, %d skipped, %d errors", synced, skipped, errors)
     return {"synced": synced, "skipped": skipped, "errors": errors}
+
+
+def delete_entity_from_kb(dms_entity_id: int) -> bool:
+    """Remove the KB entity (and its relations) mirroring a deleted DMS entity."""
+    try:
+        SessionLocal = get_session_local()
+        session = SessionLocal()
+        try:
+            kb = session.query(KbEntity).filter(
+                KbEntity.dms_entity_id == dms_entity_id
+            ).first()
+            if not kb:
+                return False
+            session.query(KbEntityRelation).filter(
+                (KbEntityRelation.from_entity_id == kb.id)
+                | (KbEntityRelation.to_entity_id == kb.id)
+            ).delete(synchronize_session=False)
+            session.delete(kb)
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.warning("Failed to delete KB entity for dms_entity_id=%s: %s", dms_entity_id, e)
+            return False
+        finally:
+            session.close()
+    except Exception as e:
+        logger.warning("KB unavailable while deleting entity %s: %s", dms_entity_id, e)
+        return False
 
 
 def sync_entity_relations_to_kb() -> Dict:
@@ -242,6 +284,8 @@ def _build_entity_text(entity_info: dict) -> str:
             attrs = {}
     if isinstance(attrs, dict):
         for k, v in attrs.items():
-            if v:
+            # "_"-prefixed keys are internal (e.g. "_mock_baseline") and must
+            # not leak into embeddings / semantic search text.
+            if v and not k.startswith("_"):
                 parts.append(f"{k}: {v}")
     return " ".join(parts)

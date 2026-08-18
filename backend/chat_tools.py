@@ -434,7 +434,11 @@ def _tool_get_document_detail(doc_id: int) -> str:
                 e = {"name": link.entity.name, "type": link.entity.entity_type, "role": link.role}
                 if link.entity.attributes:
                     try:
-                        e["attributes"] = json.loads(link.entity.attributes)
+                        attrs = json.loads(link.entity.attributes)
+                        # Strip internal "_"-prefixed keys (e.g. "_mock_baseline").
+                        if isinstance(attrs, dict):
+                            attrs = {k: v for k, v in attrs.items() if not k.startswith("_")}
+                        e["attributes"] = attrs
                     except (json.JSONDecodeError, TypeError):
                         pass
                 entities.append(e)

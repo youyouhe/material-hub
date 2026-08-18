@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dms_models import get_dms_session, DmsDocument
 from dms_audit import log_audit
+from entity_cleanup import cleanup_orphan_entities
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -67,7 +68,12 @@ def main():
             log_audit(session, user_id=1, action="delete", target_type="document",
                        target_id=doc.id, target_title=doc.title,
                        details={"reason": "clean_mock_docs script"})
+            linked_entity_ids = [link.entity_id for link in doc.entity_links]
             session.delete(doc)
+            session.flush()
+            removed = cleanup_orphan_entities(session, linked_entity_ids)
+            if removed:
+                print(f"  removed orphan entities: {removed}")
 
         session.flush()
         print(f"\nDeleted {len(mock_docs)} document(s) and {deleted_files} physical file(s).")

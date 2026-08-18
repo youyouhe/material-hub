@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from dms_auth import require_role, get_current_user_id
 from dms_audit import log_audit
+from entity_cleanup import cleanup_orphan_entities
 
 from dms_models import (
     get_dms_session, DmsDocument, Revision, DmsFile,
@@ -854,7 +855,10 @@ async def reject_document(
 
             log_audit(session, uid, "reject", "document", doc_id, title,
                       details={"action": "deleted"}, ip_address=ip)
+            linked_entity_ids = [link.entity_id for link in doc.entity_links]
             session.delete(doc)
+            session.flush()
+            cleanup_orphan_entities(session, linked_entity_ids)
             return {"status": "deleted", "document_id": doc_id}
         else:
             doc.status = "archived"

@@ -311,6 +311,10 @@ class Entity(DmsBase):
                 attrs = json.loads(self.attributes)
             except (json.JSONDecodeError, TypeError):
                 pass
+        # "_"-prefixed keys are internal bookkeeping (e.g. "_mock_baseline")
+        # and must not leak into the entity profile served to clients.
+        if isinstance(attrs, dict):
+            attrs = {k: v for k, v in attrs.items() if not k.startswith("_")}
         return {
             "id": self.id,
             "entity_type": self.entity_type,

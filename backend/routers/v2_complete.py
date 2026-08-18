@@ -68,9 +68,13 @@ def _entity_attrs(entity: Optional[Entity]) -> dict:
     if not entity or not entity.attributes:
         return {}
     try:
-        return json.loads(entity.attributes)
+        attrs = json.loads(entity.attributes)
     except (json.JSONDecodeError, TypeError):
         return {}
+    if not isinstance(attrs, dict):
+        return {}
+    # Strip internal "_"-prefixed keys (e.g. "_mock_baseline") from the profile.
+    return {k: v for k, v in attrs.items() if not k.startswith("_")}
 
 
 def _visible_legacy_material_ids(dms, entity_id: int, allowed_folders):

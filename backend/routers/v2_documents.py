@@ -19,6 +19,7 @@ from dms_models import (
     get_dms_session, DmsDocument, Revision, DmsFile, Folder, DocType,
     Entity, DocumentEntity, Tag, DocumentTag, VALID_STATUS_TRANSITIONS,
 )
+from entity_cleanup import cleanup_orphan_entities
 
 logger = logging.getLogger("materialhub.routers.v2_documents")
 
@@ -414,11 +415,17 @@ async def delete_document(doc_id: int, request: Request):
                 except OSError as e:
                     logger.warning(f"Failed to delete file {f.storage_path}: {e}")
 
+        # Capture linked entities before the cascade removes the links, so
+        # orphans can be cleaned up afterwards.
+        linked_entity_ids = [link.entity_id for link in doc.entity_links]
+
         title = doc.title
         log_audit(session, get_current_user_id(request), "delete", "document",
                   doc_id, title, ip_address=request.client.host if request.client else None)
         session.delete(doc)  # Cascade handles revisions, files, entity/tag links
-        return {"success": True, "deleted": title}
+        session.flush()
+        removed_entities = cleanup_orphan_entities(session, linked_entity_ids)
+        return {"success": True, "deleted": title, "orphan_entities_removed": removed_entities}
 
 
 # ============================================================
